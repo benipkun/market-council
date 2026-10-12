@@ -384,7 +384,7 @@ def merge_cards(cards, wanted, now, reasons=None):
         if old and old["status"] == "approved":
             continue
         if old and old["status"] == "open":
-            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost", "price_check"):
+            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost", "price_check", "forecast_line"):
                 if k in w:
                     old[k] = w[k]
             old["refreshed"] = now
@@ -1308,6 +1308,19 @@ def main():
         if r.get("ok") is False:
             x["greyed"], x["stale"] = True, True
             x["grey_reason"] = "Held back by the price check: %s. The card comes back when the two sources agree again." % r["why"]
+    # the Councillor may not raise a card without a forecast: an idea the Forecaster has not covered yet waits, greyed
+    fct = (E.rj("state/forecasts.json", {}) or {}).get("targets")
+    if fct is not None:
+        for x in wanted:
+            if x.get("kind") != "idea" or not x.get("ticker") or x["ticker"] == "portfolio" or x.get("greyed"):
+                continue
+            f = fct.get(x["ticker"])
+            if not f or f.get("none"):
+                x["greyed"] = True
+                x["grey_reason"] = ("No forecast: %s" % f["none"]) if (f and f.get("none")) else \
+                    "Waiting for the Forecaster. It runs after each US trading day; this card is offered once it has a forecast."
+            else:
+                x["forecast_line"] = f.get("line")
     reasons = {"RULE:*": "the entry signal was for one day only", "SCORE:*": "the share no longer passes five of the seven checks", "TEST:*": "the test is over",
                "CORE": "part of the house core is now held, or the strategy changed"}
     if keeps:

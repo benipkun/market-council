@@ -932,6 +932,12 @@ def main():
         out["quant"] = quant.run(shares, ctx, meta, targets, limits, load, save)
     except Exception as e:
         limits.append("The quant tools did not run (%s: %s)." % (type(e).__name__, str(e)[:120]))
+    # the Forecaster: dated yes-or-no forecasts with probabilities, logged once and scored when their date arrives
+    try:
+        import forecast
+        out["forecast"] = forecast.run(shares, ctx, meta, targets, limits, load, save)
+    except Exception as e:
+        limits.append("The Forecaster did not run (%s: %s)." % (type(e).__name__, str(e)[:120]))
     out["runtime_s"], out["fetch_s"] = int(time.time() - t0), fetched
     E.wj("state/backcheck.json", out)
     E.wj("state/patterns.json", pat)
