@@ -114,7 +114,7 @@ function cardBlock(c){return M.blk("DECISION CARD "+esc(c.id),cardTag(c),'<div s
 /* ---------- today: the morning check (item 18) ---------- */
 M.slots["td-dec"]=function(){setTimeout(paperInject,0);var d=D();if(!d||!d.morning)return "";var m=d.morning,byId={};(d.cards||[]).forEach(function(c){byId[c.id]=c;});
 var qs=m.questions.map(function(q){var c=byId[q.id],s=c?null:said(q.id,q.answer,q.answered_at),h='<div class="p3q"><div class="t">'+esc(vis()?q.text:(q.text_plain||q.text))+'</div><div class="d">'+esc(q.detail||"")+'</div>';
-if(c)h+=cardState(c)+'<details class="p3d"><summary>'+((c.checks||[]).length?"See the checklist, the order ticket and the reasons":"See the order ticket and the reasons")+'</summary>'+cardBody(c)+'</details>';
+if(c)h+=(M.cardTop?M.cardTop(c):"")+cardState(c)+'<details class="p3d"><summary>'+((c.checks||[]).length?"See the checklist, the order ticket and the reasons":"See the order ticket and the reasons")+'</summary>'+cardBody(c)+'</details>';
 else if(s)h+='<div class="q me">You said <b>'+(s.a==="yes"?esc(q.yes):esc(q.no))+'</b> '+MID+" "+esc(MC.when(s.at))+(s.rec?"":". Waiting for the engine to record it.")+'</div>';
 else h+='<div class="p3b"><button class="y" data-p3="ans" data-k="morning" data-id="'+esc(q.id)+'" data-v="yes">'+esc(q.yes)+'</button><button data-p3="ans" data-k="morning" data-id="'+esc(q.id)+'" data-v="no">'+esc(q.no)+'</button></div>';
 return h+'</div>';}).join("")||'<div class="nbx">Nothing needs a decision today.</div>';
