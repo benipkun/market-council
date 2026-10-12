@@ -115,7 +115,7 @@ class Scorecard(unittest.TestCase):
                  ins={"open_market_buys_90d": 1, "buy_value_90d": 1000.0, "sale_value_90d": 0.0, "open_market_sales_90d": 0},
                  kh=[{"recent_activity": "Add 5%"}, {"recent_activity": "Reduce"}], rv={"surprise_pct": 4.0, "move_5d": 0.02})
         a.update(kw)
-        res = S.score_checks(a["mos"], a["fair"], a["em"], a["px"], a["spy_mom"], a["ins"], a["kh"], a["rv"], None, None, a.get("dropped"))
+        res = S.score_checks(a["mos"], a["fair"], a["em"], a["px"], a["spy_mom"], a["ins"], a["kh"], a["rv"], None, None, a.get("dropped"), a.get("fair_rng"))
         self.last = res
         return dict((c["id"], c["pass"]) for c in res["checks"])
 
@@ -134,6 +134,14 @@ class Scorecard(unittest.TestCase):
         self.assertFalse(self.checks(kh=[{"recent_activity": "Add"}])["holders"])     # one holder is not enough
         self.assertFalse(self.checks(rv={"surprise_pct": 4.0, "move_5d": -0.01})["drift"])
         self.assertIsNone(self.checks(em=None)["quality"])                    # no data is not a pass
+
+
+    def test_fair_value_is_a_range(self):
+        key = "the operating margin"
+        self.assertIsNone(self.checks(fair_rng={"low": 90.0, "high": 120.0, "most_sensitive": key})["value"])   # price 100 is inside: unclear, not a pass
+        self.assertEqual(self.last["score"], 6)
+        self.assertTrue(self.checks(fair_rng={"low": 105.0, "high": 140.0, "most_sensitive": key})["value"])    # under even the lowest estimate
+        self.assertFalse(self.checks(fair_rng={"low": 60.0, "high": 95.0, "most_sensitive": key})["value"])     # above even the highest
 
 
 class PriceCrossCheck(unittest.TestCase):
@@ -281,6 +289,18 @@ class Forecasts(unittest.TestCase):
         x2 = x.copy()
         x2[-1] = 1.0                                         # change the last day only
         self.assertEqual(F.cells_for(x2)[:-1].tolist(), c[:-1].tolist())
+
+
+class PortfolioFirst(unittest.TestCase):
+    def test_spreading_money_shrinks_the_bad_year(self):
+        rng = np.random.default_rng(1)
+        a, b = rng.normal(0, 0.03, 600), rng.normal(0, 0.03, 600)
+        rets, mus = {"A": a, "B": b}, {"A": 0.08, "B": 0.08}
+        one, two = D.bad_year({"A": 1.0}, rets, mus), D.bad_year({"A": 0.5, "B": 0.5}, rets, mus)
+        self.assertLess(one, two)                                        # one share alone has the worse bad year
+        self.assertLess(one, -0.2)
+        self.assertEqual(one, D.bad_year({"A": 1.0}, rets, mus))         # the same draws every time
+        self.assertIsNone(D.bad_year({"A": 1.0}, {"A": a[:100]}, mus))   # too little history: no figure
 
 
 class TrackRecord(unittest.TestCase):
