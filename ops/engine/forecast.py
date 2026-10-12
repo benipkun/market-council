@@ -21,7 +21,7 @@ import numpy as np
 
 import engine as E
 
-VERSION = 1
+VERSION = 2
 RUNS, SENS_RUNS, BT_RUNS, BLOCK, SEED = 10000, 2000, 1000, 21, 20261012
 HZ = (("1m", 21), ("3m", 63), ("1y", 252))
 HN = {"1m": "one month", "3m": "three months", "1y": "one year"}
@@ -350,6 +350,7 @@ def summarise(P, O, PL, labels=None):
         out["verdict"] = "Too early to judge: %d forecast%s checked, %d needed." % (n, "" if n == 1 else "s", ENOUGH)
     else:
         out["verdict"] = ("Its error score is %.3f (lower is better; 0 is perfect). Always saying 50%% scores %.3f and the plain base rate %.3f. " % (bf, b5, bp)) + (
+            "It beats always saying 50% clearly, but the plain base rate only just: nearly all of its accuracy is the base rate itself." if (bf < b5 and 0 < bp - bf < 0.005) else
             "It beats both." if (bf < b5 and bf < bp) else "It beats always saying 50% but NOT the plain base rate, so the extra work adds nothing yet." if bf < b5
             else "It beats the plain base rate but not always saying 50%." if bf < bp else "It beats NEITHER rival: its probabilities are no better than a guess.")
     return out
