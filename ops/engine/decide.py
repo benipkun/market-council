@@ -1487,6 +1487,12 @@ def main():
     out["notified_keys"] = {k: v for k, v in told.items() if (age_days(v, now) or 0) < 30}
     out["morning"] = morning(prev.get("morning"), cards, plans, snap, quant, hp, smart, answers, now)
     E.wj("state/decisions.json", out)
+    # the one-page statement the partner meetings read: plain figures from the records, nothing judged here
+    try:
+        import partners
+        partners.run(now)
+    except Exception as e:
+        print("partners: the statement was not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     E.wj("state/paper_book.json", paper(E.rj("state/paper_book.json", None), cards, pos, snap, now))
     print("decide ok:", len([c for c in cards if c["status"] == "open"]), "open cards,", len(plans), "plans,", out["morning"]["waiting"], "questions waiting;", out["morning"].get("sent_note"))
 
