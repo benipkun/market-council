@@ -37,7 +37,8 @@ jobs:
           if [ -z "$NTFY_IN" ]; then echo "The NTFY_IN secret is not set yet."; exit 0; fi
           mkdir -p ops && cp _code/ops/ntfy_in.py ops/
           SINCE=$(cat inbox/ntfy_since.txt 2>/dev/null || echo 10m)
-          curl -sS -m 20 "https://ntfy.sh/$NTFY_IN/json?poll=1&since=$SINCE" -o /tmp/in.jsonl 2>/dev/null || exit 0
+          T_IN=$(printf %s "$NTFY_IN" | tr -d '[:space:]' | sed -E 's#^(https?://)?ntfy\.sh/##')
+          curl -sS -m 20 "https://ntfy.sh/$T_IN/json?poll=1&since=$SINCE" -o /tmp/in.jsonl 2>/dev/null || exit 0
           python3 ops/ntfy_in.py /tmp/in.jsonl
           if [ -n "$(git status --porcelain inbox)" ]; then
             # Git's own messages can name files, so they stay out of this public log.
@@ -58,6 +59,7 @@ jobs:
           # One message when a job starts failing, not one for every failed run after it.
           prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow listen.yml --status completed --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || true)
           if [ "$prev" = "failure" ]; then echo "Already reported after the previous failed run."; exit 0; fi
-          jq -n --arg t "$NTFY_OUT" --arg m "The phone message pickup job failed at $(date -u +%H:%M) UTC. The last good results stay in place. Open SYSTEM in the app." '{topic:$t,title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
-          code=$(curl -sS -m 20 --retry 3 --retry-delay 5 -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -d @/tmp/alert.json https://ntfy.sh/ || echo failed)
-          echo "alert sent: HTTP $code"
+          T=$(printf %s "$NTFY_OUT" | tr -d '[:space:]' | sed -E 's#^(https?://)?ntfy\.sh/##')
+          jq -n --arg t "$T" --arg m "The phone message pickup job failed at $(date -u +%H:%M) UTC. The last good results stay in place. Open SYSTEM in the app." '{topic:$t,title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
+          code=$(curl -sS -m 20 --retry 3 --retry-delay 5 -o /tmp/resp.json -w "%{http_code}" -H "Content-Type: application/json" -d @/tmp/alert.json https://ntfy.sh/ || echo failed)
+          if [ "$code" = "200" ]; then echo "alert sent: HTTP 200"; else echo "alert NOT sent: HTTP $code $(jq -r '.error // empty' /tmp/resp.json 2>/dev/null)"; fi
