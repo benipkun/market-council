@@ -345,7 +345,7 @@ def money(v):
     return ("$%.1fm" % (v / 1e6)) if v >= 1e6 else ("$%.0fk" % (v / 1e3)) if v >= 1e3 else ("$%.0f" % v)
 
 
-def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, ages=None):
+def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, ages=None, dropped=None):
     # The seven checks, one place for the watchlist and the wide screen. Each check carries today's reading, the line it is
     # measured against, how far the reading is from that line, the age of its data and, when it fails, what would make it pass.
     checks, ages = [], ages or {}
@@ -411,13 +411,22 @@ def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, age
             ("results reported %s" % rv.get("reported")) if rv.get("reported") else None)
     else:
         add("drift", "Last results beat forecasts and the price rose over five days", None, "no earnings data", "an earnings history from the free source")
+    # a check dropped by the written rule of the live track record (track.py) no longer counts; the pass mark shrinks in proportion
+    dropped = dropped or {}
+    for k in checks:
+        if k["id"] in dropped:
+            k.update({"pass": None, "dropped": True, "needs": None,
+                      "detail": "dropped on %s: ideas that passed it did worse than the index fund and the average share" % (dropped[k["id"]] or {}).get("on")})
+    live = len([k for k in checks if not k.get("dropped")])
+    need = EDGE_PASS if live >= 7 else max(3, -(-EDGE_PASS * live // 7))
     score = len([k for k in checks if k["pass"]])
     trend_ok = [k for k in checks if k["id"] == "trend"][0]["pass"] is True
-    return {"score": score, "of": len(checks), "known": len([k for k in checks if k["pass"] is not None]), "qualifies": bool(score >= EDGE_PASS and trend_ok),
-            "trend_ok": trend_ok, "checks": checks}
+    return {"score": score, "of": live, "known": len([k for k in checks if k["pass"] is not None]), "pass_mark": need,
+            "qualifies": bool(score >= need and (trend_ok or "trend" in dropped)), "trend_ok": trend_ok, "checks": checks}
 
 def edge_scores(ix, spy_rows, lim, held):
     rows, spy = [], [v for d, v in spy_rows]
+    dropped = E.rj("state/track/dropped.json", {}) or {}
     spy_mom = (spy[-22] / spy[-253] - 1) if len(spy) > 260 else 0.0
     tech = (E.rj("digests/latest.json", {}) or {}).get("technicals") or {}
     for c in (ix or {}).get("cards") or []:
@@ -431,7 +440,7 @@ def edge_scores(ix, spy_rows, lim, held):
                 "insiders": (sm.get("insiders") or {}).get("as_of"), "insiders_kept": (sm.get("insiders") or {}).get("kept"),
                 "holders": (sm.get("known_investors") or {}).get("as_of"), "holders_kept": (sm.get("known_investors") or {}).get("kept")}
         r = score_checks(c.get("mos"), c.get("fair"), ((card.get("valuation") or {}).get("assumptions") or {}).get("ebit_margin"), px, spy_mom,
-                         sm.get("insiders"), (sm.get("known_investors") or {}).get("holders"), (card.get("earnings") or {}).get("review"), nxt, ages)
+                         sm.get("insiders"), (sm.get("known_investors") or {}).get("holders"), (card.get("earnings") or {}).get("review"), nxt, ages, dropped)
         r.update({"t": t, "held": t in held, "name": card.get("name") or t, "price": r4(float(px[-1]), 2) if px else None, "source": c.get("source") or "watchlist",
                   "mos": c.get("mos"), "fair": c.get("fair")})
         rows.append(r)

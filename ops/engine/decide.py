@@ -1326,6 +1326,12 @@ def main():
     if keeps:
         reasons["REBAL"] = "you chose to keep " + ", ".join(sorted(keeps))
     cards = merge_cards(old, wanted, now, reasons)
+    # the live track record: every idea is written down once, on the day it is raised, offered or not
+    try:
+        import track
+        track_note = dict(zip(("added", "intact"), track.log_cards(cards, E.read_cache, now)[1:]))
+    except Exception as e:
+        track_note = {"added": 0, "intact": None, "error": type(e).__name__}
     notified, push_note = list(prev.get("notified") or []), prev.get("push_note")
     fresh = [c for c in cards if c["status"] == "open" and not c.get("greyed") and c["id"] not in notified]
     # a card that comes back under the same key within a week is not announced a second time
@@ -1337,7 +1343,7 @@ def main():
     notified += [c["id"] for c in again]
     fresh = [c for c in fresh if not (told.get(c["key"]) and (age_days(told[c["key"]], now) or 0) < 7)]
     if fresh:
-        msg = "%d new card%s on your desk: %s%s. Open the app to answer yes or no." % (
+        msg = "%d new card%s on your desk: %s%s. They rest on checks that are still unproven. Open the app to answer yes or no." % (
             len(fresh), "" if len(fresh) == 1 else "s", "; ".join((c.get("title_plain") or c["title"]) for c in fresh[:3]),
             "" if len(fresh) <= 3 else " and %d more" % (len(fresh) - 3))
         push_note = push("Decision desk", msg, "bell", now)
@@ -1391,6 +1397,7 @@ def main():
                           "checked": len(pchk), "agree": sorted(t for t, r in pchk.items() if r.get("ok") is True),
                           "held": sorted(t for t, r in pchk.items() if r.get("ok") is False),
                           "one_source": sorted(t for t, r in pchk.items() if r.get("ok") is None), "by": pchk}
+    out["track"] = track_note
     out["notified_keys"] = {k: v for k, v in told.items() if (age_days(v, now) or 0) < 30}
     out["morning"] = morning(prev.get("morning"), cards, plans, snap, quant, hp, smart, answers, now)
     E.wj("state/decisions.json", out)

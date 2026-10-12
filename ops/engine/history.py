@@ -938,6 +938,12 @@ def main():
         out["forecast"] = forecast.run(shares, ctx, meta, targets, limits, load, save)
     except Exception as e:
         limits.append("The Forecaster did not run (%s: %s)." % (type(e).__name__, str(e)[:120]))
+    # the live track record: every logged idea against the index fund and the average share of the list
+    try:
+        import track
+        out["track"] = track.run(shares, ctx, limits)
+    except Exception as e:
+        limits.append("The live track record was not measured (%s: %s)." % (type(e).__name__, str(e)[:120]))
     out["runtime_s"], out["fetch_s"] = int(time.time() - t0), fetched
     E.wj("state/backcheck.json", out)
     E.wj("state/patterns.json", pat)
