@@ -29,7 +29,7 @@ on:
         default: "0"
 permissions:
   contents: read
-  actions: read
+  actions: write
 concurrency:
   group: calculation-engine
   cancel-in-progress: false
@@ -117,6 +117,12 @@ jobs:
             say "Results saved."
           fi
           if [ -s /tmp/failed ]; then say "Failed: $(tr '\n' ' ' < /tmp/failed)"; exit 1; fi
+      # GitHub starts scheduled jobs late, sometimes by many hours, so every engine run also starts the health check.
+      - name: Start the health check
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run watch.yml --repo "$GITHUB_REPOSITORY" || echo "The health check could not be started."
       - name: Tell the phone if this job failed
         if: failure()
         env:
