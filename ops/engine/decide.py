@@ -699,7 +699,7 @@ def morning(prev, cards, plans, snap, quant, holds_, smart, answers, now):
     out = {"date": today.isoformat(), "questions": qs, "waiting": len(waiting), "summary": lines, "sent_date": (prev or {}).get("sent_date"), "sent_note": (prev or {}).get("sent_note")}
     hour = int(now[11:13])
     if out["sent_date"] != today.isoformat() and today.weekday() < 5 and hour >= 5 and not QUICK:
-        topic = os.environ.get("NTFY_OUT")
+        topic = re.sub(r"^(https?://)?ntfy\.sh/", "", (os.environ.get("NTFY_OUT") or "").strip())
         head = ("%d question%s need%s your yes or no. " % (len(waiting), "" if len(waiting) == 1 else "s", "s" if len(waiting) == 1 else "")) if waiting else "Nothing needs a decision. "
         body = {"topic": topic, "title": "Morning check", "message": head + " ".join(lines), "click": APP + "#today", "tags": ["sunrise"]}
         if not topic or E.OFFLINE:
@@ -1170,7 +1170,7 @@ def bar_check(paper_picks):
 
 
 def push(title, message, tag, now):
-    topic = os.environ.get("NTFY_OUT")
+    topic = re.sub(r"^(https?://)?ntfy\.sh/", "", (os.environ.get("NTFY_OUT") or "").strip())
     if not topic or E.OFFLINE:
         return "not sent: no phone channel in this run"
     try:
