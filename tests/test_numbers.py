@@ -18,6 +18,7 @@ import decide as D  # noqa: E402
 import forecast as F  # noqa: E402
 import health as H  # noqa: E402
 import lab as L  # noqa: E402
+import partners as P  # noqa: E402
 import quant as Q  # noqa: E402
 import strategy as S  # noqa: E402
 import track as T  # noqa: E402
@@ -301,6 +302,26 @@ class PortfolioFirst(unittest.TestCase):
         self.assertLess(one, -0.2)
         self.assertEqual(one, D.bad_year({"A": 1.0}, rets, mus))         # the same draws every time
         self.assertIsNone(D.bad_year({"A": 1.0}, {"A": a[:100]}, mus))   # too little history: no figure
+
+
+class PartnersStatement(unittest.TestCase):
+    def test_same_money_in_the_index_fund(self):
+        days = [{"date": "2026-09-16", "nav": 1000.0}, {"date": "2026-10-12", "nav": 900.0}]
+        spy = [("2026-09-16", 100.0), ("2026-09-28", 110.0), ("2026-10-12", 120.0)]
+        a = P.index_alternative(days, [("2026-09-28", -110.0)], spy, 900.0)
+        self.assertAlmostEqual(a["result"], 10.0, places=2)             # 900 now, 1,000 at the start, 110 taken out
+        self.assertAlmostEqual(a["index_now"], 1077.0, places=2)        # 9.975 units bought, 1 sold at 110, 8.975 left at 120
+        self.assertAlmostEqual(a["index_result"], 187.0, places=2)
+        self.assertAlmostEqual(a["ahead_of_index"], -177.0, places=2)
+
+    def test_a_withdrawal_is_not_a_loss(self):
+        days = [{"date": "d1", "nav": 1000.0}, {"date": "d2", "nav": 890.0}, {"date": "d3", "nav": 801.0}]
+        self.assertAlmostEqual(P.drawdown(days, [("d2", -110.0)]), -0.10, places=4)
+
+    def test_only_applied_payments_count(self):
+        ledger = {"entries": [{"action": "withdraw", "usd": 95, "status": "applied", "at": "2026-09-28T02:00:37Z"}, {"action": "deposit", "usd": 50, "status": "test", "at": "2026-09-29T00:00:00Z"},
+                              {"action": "buy", "usd": 95, "status": "applied", "at": "2026-09-25T12:08:36Z"}]}
+        self.assertEqual(P.money_flows(ledger), [("2026-09-28", -95.0)])
 
 
 class TrackRecord(unittest.TestCase):
