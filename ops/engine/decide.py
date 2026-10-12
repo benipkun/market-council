@@ -936,7 +936,7 @@ def portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct):
     mus["SPY"] = rf + 0.05
 
     def rets_for(ts):
-        days = sorted(set.intersection(*[set(series[t]) for t in ts]))[-757:]
+        days = sorted(set.intersection(*[set(series[t]) for t in ts]))
         if len(days) < 152:
             return None
         return dict((t, np.array([series[t][d] for d in days[1:]]) / np.array([series[t][d] for d in days[:-1]]) - 1) for t in ts)
@@ -949,7 +949,7 @@ def portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct):
     top = max(held, key=lambda t: held[t])
     out = {"largest": {"t": top, "share": r2(held[top], 4)}, "bad_year": r2(bad_year(held, r0, mus), 4), "days": int(len(r0["SPY"])),
            "covers": r2(sum(w for t, w in held.items() if t in r0), 4), "keeps": {},
-           "method": "The bad year is the one-in-ten worst outcome of 4,000 simulated years, drawn from the holdings' own daily price changes over the days they share (up to three years) in unbroken 21-day stretches, with each share shifted to its assumed yearly return and cash earning nothing. Before and after use the same random draws, so the difference comes only from the weights. An estimate."}
+           "method": "The bad year is the one-in-ten worst outcome of 4,000 simulated years, drawn from the holdings' own daily price changes over all the days they share in unbroken 21-day stretches, with each share shifted to its assumed yearly return and cash earning nothing. Before and after use the same random draws, so the difference comes only from the weights. An estimate."}
     cap = float(lim.get("stock_cap") or 0)
     for t in keeps or {}:
         if t in held and cap and held[t] > cap and t in r0:
