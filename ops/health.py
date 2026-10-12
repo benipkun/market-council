@@ -9,6 +9,7 @@
 import datetime
 import json
 import os
+import re
 import sys
 import urllib.request
 
@@ -197,7 +198,7 @@ def gh_runs(file):
 
 
 def push(m):
-    topic = os.environ.get("NTFY_OUT")
+    topic = re.sub(r"^(https?://)?ntfy\.sh/", "", (os.environ.get("NTFY_OUT") or "").strip())
     if not topic:
         return "no channel set"
     body = {"topic": topic, "title": m["title"], "message": m["message"][:900], "click": APP, "tags": [m["tag"]]}
