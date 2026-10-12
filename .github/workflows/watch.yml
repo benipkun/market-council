@@ -1,0 +1,81 @@
+# Market Council health check: every half hour it asks when each job last ran and how it ended, reads
+# the dates inside the private records, and sends one phone message when a job was skipped, results
+# went stale or the price check is holding cards back (ops/health.py has the rules). The result goes
+# to the private records (state/health.json) for the SYSTEM screen. This public log only says whether
+# the check ran. Once a week it also writes a one-line heartbeat file here, because GitHub switches
+# off the schedules of a public repository that sees no change for 60 days.
+name: Health check
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: health-check
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Fetch the private records
+        uses: actions/checkout@v4
+        with:
+          repository: benipkun/market-council-state
+          token: ${{ secrets.MC_TOKEN }}
+          ref: main
+      - name: Fetch this repository's code
+        uses: actions/checkout@v4
+        with:
+          path: _code
+      - name: Check the jobs and the data
+        env:
+          NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ops state/logs && cp _code/ops/health.py ops/
+          if python3 ops/health.py > /tmp/health.txt 2>&1; then echo "health: checked"; else echo "health: FAILED (details in the private records, state/logs/health.txt)"; echo health >> /tmp/failed; fi
+          if [ -s /tmp/failed ] || [ -n "$(git status --porcelain state/health.json)" ]; then
+            { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/health.txt; } > state/logs/health.txt
+            # Git's own messages can name files, so they stay out of this public log.
+            exec 3>&1 >/tmp/git.txt 2>&1
+            git config user.name "Market Council Engine"
+            git config user.email "engine@market-council.local"
+            git add -A state/health.json state/logs/health.txt
+            if ! git diff --cached --quiet; then
+              git commit -q -m "Health check $(date -u +%Y-%m-%dT%H:%MZ)"
+              git reset -q --hard HEAD
+              for i in 1 2 3; do
+                if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then break; fi
+                git rebase --abort 2>/dev/null || true
+                sleep 4
+              done
+            fi
+            exec >&3 2>&1
+          fi
+          if [ -s /tmp/failed ]; then exit 1; fi
+      - name: Weekly heartbeat for this repository
+        run: |
+          cd _code
+          week=$(date -u +%G-W%V)
+          if [ "$(cat heartbeat.txt 2>/dev/null)" != "$week" ]; then
+            echo "$week" > heartbeat.txt
+            git config user.name "Market Council Engine"
+            git config user.email "engine@market-council.local"
+            git add heartbeat.txt
+            git commit -q -m "Weekly heartbeat $week"
+            git push -q || echo "The heartbeat could not be saved this time."
+          fi
+      - name: Tell the phone if this job failed
+        if: failure()
+        env:
+          NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow watch.yml --status completed --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || true)
+          if [ "$prev" = "failure" ]; then echo "Already reported after the previous failed run."; exit 0; fi
+          jq -n --arg t "$NTFY_OUT" --arg m "The health check itself failed at $(date -u +%H:%M) UTC, so skipped jobs and stale data are not being watched right now. Open SYSTEM in the app." '{topic:$t,title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
+          code=$(curl -sS -m 20 --retry 3 --retry-delay 5 -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -d @/tmp/alert.json https://ntfy.sh/ || echo failed)
+          echo "alert sent: HTTP $code"

@@ -14,7 +14,7 @@ name: Calculation engine
 on:
   push:
     branches: [main]
-    paths: ["ops/engine/**", "ops/render_brief.py", ".github/workflows/engine.yml"]
+    paths: ["ops/engine/**", "ops/render_brief.py", "tests/**", ".github/workflows/engine.yml"]
   schedule:
     - cron: "40 6,13,21 * * 1-5"
   workflow_dispatch:
@@ -23,8 +23,13 @@ on:
         description: "1 = only the decision desk (after an answer in the app)"
         required: false
         default: "0"
+      drill:
+        description: "1 = fail on purpose, to test the phone alert"
+        required: false
+        default: "0"
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: calculation-engine
   cancel-in-progress: false
@@ -50,11 +55,19 @@ jobs:
           mkdir -p ops/engine
           cp _code/ops/engine/*.py _code/ops/engine/funnel_seed.json ops/engine/
           cp _code/ops/*.py ops/
+      - name: Alarm drill (only when started by hand with drill = 1)
+        if: github.event.inputs.drill == '1'
+        run: |
+          echo "Failing on purpose to test the phone alert. Nothing was calculated or changed."
+          exit 1
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install numpy and scipy
         run: pip install --quiet numpy scipy
+      # The engine only runs if its key numbers still come out right on known inputs.
+      - name: Run the tests
+        run: python _code/tests/test_numbers.py
       - name: Restore the last good price files
         uses: actions/cache@v4
         with:
@@ -104,3 +117,15 @@ jobs:
             say "Results saved."
           fi
           if [ -s /tmp/failed ]; then say "Failed: $(tr '\n' ' ' < /tmp/failed)"; exit 1; fi
+      - name: Tell the phone if this job failed
+        if: failure()
+        env:
+          NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # One message when a job starts failing, not one for every failed run after it.
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow engine.yml --status completed --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || true)
+          if [ "$prev" = "failure" ]; then echo "Already reported after the previous failed run."; exit 0; fi
+          jq -n --arg t "$NTFY_OUT" --arg m "The calculation engine job failed at $(date -u +%H:%M) UTC. The last good results stay in place. Open SYSTEM in the app." '{topic:$t,title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
+          code=$(curl -sS -m 20 --retry 3 --retry-delay 5 -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -d @/tmp/alert.json https://ntfy.sh/ || echo failed)
+          echo "alert sent: HTTP $code"

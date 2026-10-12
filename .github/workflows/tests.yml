@@ -1,0 +1,36 @@
+# Runs the tests of the engine's key numbers on every change to the code. The inputs are made up and
+# the expected figures can be checked by hand, so nothing private is involved. The calculation
+# engine runs the same tests before every run and does not run if one fails.
+name: Tests
+on:
+  push:
+    branches: [main]
+    paths: ["ops/**", "tests/**", ".github/workflows/tests.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install numpy and scipy
+        run: pip install --quiet numpy scipy
+      - name: Run the tests
+        run: python tests/test_numbers.py
+      - name: Tell the phone if this job failed
+        if: failure()
+        env:
+          NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow tests.yml --status completed --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || true)
+          if [ "$prev" = "failure" ]; then echo "Already reported after the previous failed run."; exit 0; fi
+          jq -n --arg t "$NTFY_OUT" --arg m "A change to the code failed its tests at $(date -u +%H:%M) UTC. The engine will not run until they pass. Open SYSTEM in the app." '{topic:$t,title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
+          code=$(curl -sS -m 20 --retry 3 --retry-delay 5 -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -d @/tmp/alert.json https://ntfy.sh/ || echo failed)
+          echo "alert sent: HTTP $code"
