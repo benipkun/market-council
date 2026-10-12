@@ -384,7 +384,7 @@ def merge_cards(cards, wanted, now, reasons=None):
         if old and old["status"] == "approved":
             continue
         if old and old["status"] == "open":
-            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost"):
+            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost", "price_check"):
                 if k in w:
                     old[k] = w[k]
             old["refreshed"] = now
@@ -834,6 +834,73 @@ def stale(day, now):
     return n is not None and n > 4
 
 
+# ---------------------------------------------------------------- the price cross-check
+# Every card's price series (CNBC) is compared with a second, independent source (Cboe's delayed daily closes). A card is
+# held back when the series is a finished day behind the second source, or when the two closes for the same day differ by
+# more than PRICE_TOL. The tolerance is 2% and not smaller because the first source adjusts yesterday's close on the day a
+# dividend is paid out and the second may not; a wrong or unadjusted price is off by far more than that.
+PRICE_TOL = 0.02
+
+
+def _ts(s):
+    return datetime.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+
+
+def price_cut(now):
+    # the first day whose daily bar is not final yet: today's until half an hour after the US close, tomorrow's after that
+    t = _ts(now) - datetime.timedelta(hours=4)
+    late = t.hour * 60 + t.minute >= 16 * 60 + 30
+    return (t.date() + datetime.timedelta(days=1 if late else 0)).isoformat()
+
+
+def compare_series(first, second, cut):
+    # first, second: [(day, close)], oldest first. Bars dated cut or later are unfinished and are left out.
+    a = [(d, v) for d, v in first if d < cut]
+    b = [(d, v) for d, v in second if d < cut]
+    if not a:
+        return {"ok": False, "why": "the first source has no price for it"}
+    if not b:
+        return {"ok": None, "why": "one source only: the second source has no prices for it", "first_day": a[-1][0]}
+    out = {"first_day": a[-1][0], "second_day": b[-1][0]}
+    if a[-1][0] < b[-1][0]:
+        out.update(ok=False, why="its price series stops at %s while the second source already has %s" % (a[-1][0], b[-1][0]))
+        return out
+    bd, ad = dict(b), dict(a)
+    common = [d for d, v in a if d in bd]
+    if not common or not bd[common[-1]]:
+        out.update(ok=None, why="one source only: the two sources share no day to compare")
+        return out
+    d = common[-1]
+    diff = abs(ad[d] / bd[d] - 1)
+    out.update(day=d, first=round(float(ad[d]), 4), second=round(float(bd[d]), 4), diff=round(float(diff), 4))
+    if diff > PRICE_TOL:
+        out.update(ok=False, why="the two sources disagree by %.1f%% on the close of %s" % (100 * diff, d))
+    else:
+        out.update(ok=True, why="both sources agree within %.0f%% on the close of %s" % (100 * PRICE_TOL, d))
+    return out
+
+
+def price_checks(tickers, prev, now):
+    # one reading per share every three hours; a quick run (after an answer in the app) reuses what is there
+    old, by, cut = (prev or {}).get("by") or {}, {}, price_cut(now)
+    for t in sorted(set(tickers)):
+        o = old.get(t)
+        if o and o.get("at") and (QUICK or E.OFFLINE or (_ts(now) - _ts(o["at"])).total_seconds() < 3 * 3600):
+            by[t] = o
+            continue
+        if E.OFFLINE:
+            continue
+        try:
+            second = E.fetch_cboe(t)
+        except Exception:
+            second = []
+        r = compare_series(E.read_cache(t), second, cut)
+        r["at"] = now
+        by[t] = r
+        time.sleep(0.2)
+    return by
+
+
 def vol20(t):
     px = np.array([v for d, v in E.read_cache(t)][-21:], dtype=float)
     return float(np.std(px[1:] / px[:-1] - 1, ddof=1) * math.sqrt(252)) if len(px) == 21 else None
@@ -1230,6 +1297,17 @@ def main():
         if x.get("ticker") and x.get("kind") == "idea":
             x["cost"] = cost_lines(x["ticker"], liq, (x.get("legs") or [{}])[0].get("limit"), list(SIZES))
     wanted += ideas
+    # cross-check the price behind every card against a second source; a card whose price fails the check is held back
+    has_px = [x["ticker"] for x in wanted if x.get("ticker") and x["ticker"] != "portfolio" and E.read_cache(x["ticker"])]
+    pchk = price_checks(has_px, prev.get("price_check"), now)
+    for x in wanted:
+        r = pchk.get(x.get("ticker"))
+        if not r:
+            continue
+        x["price_check"] = {k: r.get(k) for k in ("ok", "why", "day", "first", "second", "diff", "first_day", "second_day", "at")}
+        if r.get("ok") is False:
+            x["greyed"], x["stale"] = True, True
+            x["grey_reason"] = "Held back by the price check: %s. The card comes back when the two sources agree again." % r["why"]
     reasons = {"RULE:*": "the entry signal was for one day only", "SCORE:*": "the share no longer passes five of the seven checks", "TEST:*": "the test is over",
                "CORE": "part of the house core is now held, or the strategy changed"}
     if keeps:
@@ -1296,6 +1374,10 @@ def main():
     out["ideas_log"] = {k: v for k, v in log.items() if str(v.get("last_seen") or "") >= cutoff}
     out["funnel_days"], out["notified"], out["push_note"] = days, notified[-80:], push_note
     out["liquidity"] = {k: v for k, v in liq.items() if k in set(c.get("ticker") for c in cards if c.get("status") == "open")}
+    out["price_check"] = {"as_of": now, "tolerance": PRICE_TOL, "first_source": "CNBC daily closes", "second_source": "Cboe delayed daily closes",
+                          "checked": len(pchk), "agree": sorted(t for t, r in pchk.items() if r.get("ok") is True),
+                          "held": sorted(t for t, r in pchk.items() if r.get("ok") is False),
+                          "one_source": sorted(t for t, r in pchk.items() if r.get("ok") is None), "by": pchk}
     out["notified_keys"] = {k: v for k, v in told.items() if (age_days(v, now) or 0) < 30}
     out["morning"] = morning(prev.get("morning"), cards, plans, snap, quant, hp, smart, answers, now)
     E.wj("state/decisions.json", out)
