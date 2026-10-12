@@ -1,0 +1,89 @@
+# Market Council back-checks: tests every scorecard check against years of history, and looks for past
+# moments that resemble today for the watchlist and for the market. Public data only (CNBC prices,
+# Nasdaq statements and earnings calendar, OpenInsider filings). It writes state/backcheck.json,
+# state/patterns.json, state/history/ and the quant files (ranges, options, pairs, learned signal)
+# to the private records, and never places orders. What the script prints goes to the private
+# records (state/logs/history.txt); this public log only says whether it worked. The first run
+# fetches about 26 years of prices, the earnings calendar and the insider filings, which takes most
+# of an hour; later runs only add the new days. It runs after each US trading day, when the code
+# changes, and by hand.
+name: Back-checks
+on:
+  push:
+    branches: [main]
+    paths: ["ops/engine/history.py", "ops/engine/quant.py", ".github/workflows/history.yml"]
+  schedule:
+    - cron: "10 23 * * 1-5"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: back-checks
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Fetch the private records
+        uses: actions/checkout@v4
+        with:
+          repository: benipkun/market-council-state
+          token: ${{ secrets.MC_TOKEN }}
+          ref: main
+          fetch-depth: 0
+      - name: Fetch this repository's code
+        uses: actions/checkout@v4
+        with:
+          path: _code
+      - name: Put the code next to the records
+        run: |
+          mkdir -p ops/engine
+          cp _code/ops/engine/*.py _code/ops/engine/funnel_seed.json ops/engine/
+          cp _code/ops/*.py ops/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install numpy and scipy
+        run: pip install --quiet numpy scipy
+      - name: Restore the saved history
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/history
+          key: history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: history-
+      - name: Run the back-checks
+        run: |
+          mkdir -p state/logs
+          if python ops/engine/history.py > /tmp/history.txt 2>&1; then echo "history: ok"; else echo "history: FAILED (details in the private records, state/logs/history.txt)"; echo history >> /tmp/failed; fi
+          { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/history.txt; } > state/logs/history.txt
+      # Keep whatever history was fetched even if a later step fails, so the next run does not start from nothing.
+      - name: Save the history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/history
+          key: history-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Save the results to the private records
+        run: |
+          # Git's own messages can name files, so they stay out of this public log.
+          exec 3>&1 >/tmp/git.txt 2>&1
+          say() { echo "$1" >&3; }
+          git config user.name "Market Council Engine"
+          git config user.email "engine@market-council.local"
+          git add -A state
+          if git diff --cached --quiet; then say "Nothing changed."; else
+            git commit -q -m "Back-checks: results $(date -u +%Y-%m-%dT%H:%MZ)"
+            # Only the files under state/ are saved. Drop anything else the run touched, or git refuses to replay the commit on newer records.
+            git reset -q --hard HEAD
+            git clean -fdq research state
+            pushed=0
+            for i in 1 2 3 4; do
+              if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then pushed=1; break; fi
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+            if [ "$pushed" != "1" ]; then say "The results could not be saved to the private records."; exit 1; fi
+            say "Results saved."
+          fi
+          if [ -s /tmp/failed ]; then say "Failed: history"; exit 1; fi

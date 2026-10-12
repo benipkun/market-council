@@ -1,0 +1,50 @@
+# Picks up messages Ben types into his private ntfy "ask" channel and puts them in the private
+# records (inbox/queue/), which starts the Trade Inbox routine there; it answers through
+# outbox/queue/ and the private repository's "Send phone messages" job. GitHub runs a five-minute
+# schedule only every so often, so the private repository's relay job also starts this one after
+# every pipeline run. The channel name lives only in the secret NTFY_IN, never in the code, and the
+# messages themselves never appear in this public log: it prints only how many arrived.
+name: Receive phone messages
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: receive-phone-messages
+  cancel-in-progress: false
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch the private records
+        uses: actions/checkout@v4
+        with:
+          repository: benipkun/market-council-state
+          token: ${{ secrets.MC_TOKEN }}
+          ref: main
+      - name: Fetch this repository's code
+        uses: actions/checkout@v4
+        with:
+          path: _code
+      - name: Fetch new messages from ntfy
+        env:
+          NTFY_IN: ${{ secrets.NTFY_IN }}
+        run: |
+          if [ -z "$NTFY_IN" ]; then echo "The NTFY_IN secret is not set yet."; exit 0; fi
+          mkdir -p ops && cp _code/ops/ntfy_in.py ops/
+          SINCE=$(cat inbox/ntfy_since.txt 2>/dev/null || echo 10m)
+          curl -sS -m 20 "https://ntfy.sh/$NTFY_IN/json?poll=1&since=$SINCE" -o /tmp/in.jsonl 2>/dev/null || exit 0
+          python3 ops/ntfy_in.py /tmp/in.jsonl
+          if [ -n "$(git status --porcelain inbox)" ]; then
+            # Git's own messages can name files, so they stay out of this public log.
+            exec >/tmp/git.txt 2>&1
+            git config user.name "Market Council Messages"
+            git config user.email "routine@market-council.local"
+            git add inbox
+            git commit -q -m "Message from Ben via ntfy"
+            git checkout -q -- .
+            git push -q || (git pull -q --rebase origin main && git push -q)
+          fi

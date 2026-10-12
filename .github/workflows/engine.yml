@@ -1,0 +1,106 @@
+# Market Council calculation engine: correlations, volatility, the portfolio health check, the
+# optimiser comparison, research cards, the testing lab and the decision desk. Plain Python on
+# GitHub's servers, so the arithmetic is done by code and can be re-run by anyone.
+#
+# This repository is public and holds only the code. The records (holdings, ledger, answers,
+# results) live in a private repository, which this job fetches with the secret MC_TOKEN, works on,
+# and writes back to. Everything a script prints goes to the private records (state/logs/); this
+# public log only says which script ran and whether it worked. The job never places orders.
+#
+# It runs on a schedule, when the engine's code changes, and when the private repository's relay
+# job starts it after a bookkeeping run or an answer in the app (then, with quick = 1, only the
+# decision desk runs, which takes seconds).
+name: Calculation engine
+on:
+  push:
+    branches: [main]
+    paths: ["ops/engine/**", "ops/render_brief.py", ".github/workflows/engine.yml"]
+  schedule:
+    - cron: "40 6,13,21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: "1 = only the decision desk (after an answer in the app)"
+        required: false
+        default: "0"
+permissions:
+  contents: read
+concurrency:
+  group: calculation-engine
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      # Always start from the newest records, so a run that waited in the queue builds on the results of the run before it.
+      - name: Fetch the private records
+        uses: actions/checkout@v4
+        with:
+          repository: benipkun/market-council-state
+          token: ${{ secrets.MC_TOKEN }}
+          ref: main
+          fetch-depth: 0
+      - name: Fetch this repository's code
+        uses: actions/checkout@v4
+        with:
+          path: _code
+      - name: Put the code next to the records
+        run: |
+          mkdir -p ops/engine
+          cp _code/ops/engine/*.py _code/ops/engine/funnel_seed.json ops/engine/
+          cp _code/ops/*.py ops/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install numpy and scipy
+        run: pip install --quiet numpy scipy
+      - name: Restore the last good price files
+        uses: actions/cache@v4
+        with:
+          path: .cache/prices
+          key: prices-${{ github.run_id }}
+          restore-keys: prices-
+      - name: Run the engine
+        env:
+          TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
+          NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          QUICK: ${{ github.event.inputs.quick }}
+        run: |
+          mkdir -p state/logs
+          FILES="engine research decide"
+          if [ "$QUICK" = "1" ] && [ -f state/quant.json ] && [ -f state/lab.json ]; then
+            echo "Only answers changed: running the decision desk alone."
+            FILES="decide"
+            export MC_QUICK=1
+          fi
+          for n in $FILES; do
+            if python "ops/engine/$n.py" > "/tmp/$n.txt" 2>&1; then echo "$n: ok"; else echo "$n: FAILED (details in the private records, state/logs/$n.txt)"; echo "$n" >> /tmp/failed; fi
+            { date -u +%Y-%m-%dT%H:%MZ; cat "/tmp/$n.txt"; } > "state/logs/$n.txt"
+          done
+          # Rebuild the daily brief from the fresh results, so the brief and the app always show the same desk.
+          if python ops/render_brief.py > /tmp/brief.txt 2>&1; then echo "brief: ok"; else echo "brief: not rebuilt this run"; fi
+          { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/brief.txt; } > state/logs/brief.txt
+      - name: Save the results to the private records
+        run: |
+          # Git's own messages can name files, so they stay out of this public log.
+          exec 3>&1 >/tmp/git.txt 2>&1
+          say() { echo "$1" >&3; }
+          git config user.name "Market Council Engine"
+          git config user.email "engine@market-council.local"
+          git add -A state research brief
+          if git diff --cached --quiet; then say "Nothing changed."; else
+            git commit -q -m "Engine: results $(date -u +%Y-%m-%dT%H:%MZ)"
+            # Only state/, research/ and brief/ are saved. Drop anything else the run touched, or git refuses to replay the commit on newer records.
+            git reset -q --hard HEAD
+            # If the records moved meanwhile, replay this commit on top of them; where both changed a results file, the fresh results win.
+            pushed=0
+            for i in 1 2 3 4; do
+              if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then pushed=1; break; fi
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+            if [ "$pushed" != "1" ]; then say "The results could not be saved to the private records."; exit 1; fi
+            say "Results saved."
+          fi
+          if [ -s /tmp/failed ]; then say "Failed: $(tr '\n' ' ' < /tmp/failed)"; exit 1; fi

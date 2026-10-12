@@ -1,0 +1,79 @@
+# Market Council wide screen: once every trading day, before the calculation engine's morning run,
+# it puts a few hundred large US and European shares through the seven-check scorecard and writes
+# state/screen.json to the private records. The engine then builds full cards for the best few.
+# Public price and company pages only; it never places orders. What the script prints goes to the
+# private records (state/logs/screen.txt); this public log only says whether it worked.
+# It also runs when the screen itself is changed, and can be started by hand.
+name: Wide screen
+on:
+  push:
+    branches: [main]
+    paths: ["ops/engine/screen.py", ".github/workflows/screen.yml"]
+  schedule:
+    - cron: "20 5 * * 1-5"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wide-screen
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Fetch the private records
+        uses: actions/checkout@v4
+        with:
+          repository: benipkun/market-council-state
+          token: ${{ secrets.MC_TOKEN }}
+          ref: main
+          fetch-depth: 0
+      - name: Fetch this repository's code
+        uses: actions/checkout@v4
+        with:
+          path: _code
+      - name: Put the code next to the records
+        run: |
+          mkdir -p ops/engine
+          cp _code/ops/engine/*.py _code/ops/engine/funnel_seed.json ops/engine/
+          cp _code/ops/*.py ops/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install numpy and scipy
+        run: pip install --quiet numpy scipy
+      - name: Restore the last good price files
+        uses: actions/cache@v4
+        with:
+          path: .cache/prices
+          key: prices-${{ github.run_id }}
+          restore-keys: prices-
+      - name: Run the screen
+        run: |
+          mkdir -p state/logs
+          if python ops/engine/screen.py > /tmp/screen.txt 2>&1; then echo "screen: ok"; else echo "screen: FAILED (details in the private records, state/logs/screen.txt)"; echo screen >> /tmp/failed; fi
+          { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/screen.txt; } > state/logs/screen.txt
+      - name: Save the results to the private records
+        run: |
+          # Git's own messages can name files, so they stay out of this public log.
+          exec 3>&1 >/tmp/git.txt 2>&1
+          say() { echo "$1" >&3; }
+          git config user.name "Market Council Engine"
+          git config user.email "engine@market-council.local"
+          git add -A state/screen.json state/logs/screen.txt
+          if git diff --cached --quiet; then say "Nothing changed."; else
+            git commit -q -m "Wide screen: results $(date -u +%Y-%m-%dT%H:%MZ)"
+            # Only the screen's own two files are saved. Drop anything else the run touched, or git refuses to replay the commit on newer records.
+            git reset -q --hard HEAD
+            git clean -fdq research state
+            pushed=0
+            for i in 1 2 3 4; do
+              if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then pushed=1; break; fi
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+            if [ "$pushed" != "1" ]; then say "The results could not be saved to the private records."; exit 1; fi
+            say "Results saved."
+          fi
+          if [ -s /tmp/failed ]; then say "Failed: screen"; exit 1; fi
