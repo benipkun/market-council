@@ -384,7 +384,7 @@ def merge_cards(cards, wanted, now, reasons=None):
         if old and old["status"] == "approved":
             continue
         if old and old["status"] == "open":
-            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost", "price_check", "forecast_line"):
+            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost", "price_check", "forecast_line", "portfolio"):
                 if k in w:
                     old[k] = w[k]
             old["refreshed"] = now
@@ -901,6 +901,86 @@ def price_checks(tickers, prev, now):
     return by
 
 
+# ---------------------------------------------------------------- the whole portfolio first
+def bad_year(weights, rets, mus, runs=4000):
+    # The one-in-ten bad year of a mix: 4,000 simulated years drawn from the mix's own daily changes in unbroken 21-day
+    # stretches, each share shifted to its assumed yearly return; cash earns nothing. The same random draws are used for
+    # every mix, so two mixes differ only because their weights differ.
+    ts = [t for t, w in weights.items() if w > 0 and t in rets]
+    if not ts or len(rets[ts[0]]) < 150:
+        return None
+    n = len(rets[ts[0]])
+    rp = np.zeros(n)
+    for t in ts:
+        rp += weights[t] * (rets[t] - np.mean(rets[t]) + mus.get(t, 0.08) / 252.0)
+    starts = np.random.default_rng(20261012).integers(0, n - 21 + 1, size=(runs, 12))
+    idx = (starts[:, :, None] + np.arange(21)[None, None, :]).reshape(runs, 252)
+    return float(np.percentile(np.exp(np.sum(np.log1p(np.maximum(rp[idx], -0.95)), axis=1)) - 1, 10))
+
+
+def portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct):
+    # For every idea: what the portfolio looks like before and after it (largest holding, bad year), and the same money
+    # in the index fund instead. Ideas are then ranked by how much they shrink the bad year. A holding you decided to
+    # keep is shown with its effect on the figures; the decision itself is not reopened.
+    held = {}
+    for p in snap.get("positions") or []:
+        w = float(p.get("pct_nav") or 0)
+        if p.get("ticker") and w > 0:
+            held[p["ticker"]] = w / (100.0 if w > 1.5 else 1.0)
+    if not held or nav <= 0:
+        return None
+    assets, rf = quant.get("assets") or {}, float((quant.get("opt") or {}).get("rf") or 0.04)
+    ideas = [x for x in wanted if x.get("kind") == "idea" and x.get("ticker") and x["ticker"] != "portfolio"]
+    series = dict((t, dict(E.read_cache(t))) for t in set(list(held) + ["SPY"] + [x["ticker"] for x in ideas]))
+    mus = dict((t, float((assets.get(t) or {}).get("mu_est") or 0.08)) for t in series)
+    mus["SPY"] = rf + 0.05
+
+    def rets_for(ts):
+        days = sorted(set.intersection(*[set(series[t]) for t in ts]))[-757:]
+        if len(days) < 152:
+            return None
+        return dict((t, np.array([series[t][d] for d in days[1:]]) / np.array([series[t][d] for d in days[:-1]]) - 1) for t in ts)
+    base = [t for t in held if series.get(t)] + ["SPY"]
+    if not series.get("SPY") or len(base) < 2:
+        return None
+    r0 = rets_for(base)
+    if r0 is None:
+        return None
+    top = max(held, key=lambda t: held[t])
+    out = {"largest": {"t": top, "share": r2(held[top], 4)}, "bad_year": r2(bad_year(held, r0, mus), 4), "days": int(len(r0["SPY"])),
+           "covers": r2(sum(w for t, w in held.items() if t in r0), 4), "keeps": {},
+           "method": "The bad year is the one-in-ten worst outcome of 4,000 simulated years, drawn from the holdings' own daily price changes over the days they share (up to three years) in unbroken 21-day stretches, with each share shifted to its assumed yearly return and cash earning nothing. Before and after use the same random draws, so the difference comes only from the weights. An estimate."}
+    cap = float(lim.get("stock_cap") or 0)
+    for t in keeps or {}:
+        if t in held and cap and held[t] > cap and t in r0:
+            alt = dict(held)
+            alt["SPY"], alt[t] = alt.get("SPY", 0.0) + held[t] - cap, cap
+            out["keeps"][t] = {"share": r2(held[t], 4), "cap": r2(cap, 4), "bad_as_held": out["bad_year"], "bad_at_cap": r2(bad_year(alt, r0, mus), 4)}
+    for x in ideas:
+        t = x["ticker"]
+        if not series.get(t):
+            continue
+        rr = rets_for(list(dict.fromkeys(base + [t])))
+        if rr is None:
+            continue
+        s = float(x.get("profile_size") or 0) or float(SIZES[0])
+        new_money = max(0.0, s - cash)
+        tot = nav + new_money
+        w_i = dict((k, v * nav / tot) for k, v in held.items())
+        w_s = dict(w_i)
+        w_i[t], w_s["SPY"] = w_i.get(t, 0.0) + s / tot, w_s.get("SPY", 0.0) + s / tot
+        b0, b1, b2 = bad_year(held, rr, mus), bad_year(w_i, rr, mus), bad_year(w_s, rr, mus)
+        if b0 is None or b1 is None or b2 is None:
+            continue
+        big = max(w_i, key=lambda k: w_i[k])
+        f = (((fct or {}).get(t) or {}).get("h") or {}).get("1y") or {}
+        x["portfolio"] = {"size": r2(s), "new_money": r2(new_money), "largest_before": {"t": top, "share": r2(held[top], 4)}, "largest_after": {"t": big, "share": r2(w_i[big], 4)},
+                          "bad_before": r2(b0, 4), "bad_after": r2(b1, 4), "bad_if_index": r2(b2, 4), "change": r2(b1 - b0, 4), "index_change": r2(b2 - b0, 4),
+                          "beat_index_1y": ((f.get("f") or {}).get("beat") or {}).get("p")}
+        x["rank"] = round(1000 * (b1 - b0), 2)      # the idea that shrinks the bad year most comes first
+    return out
+
+
 def vol20(t):
     px = np.array([v for d, v in E.read_cache(t)][-21:], dtype=float)
     return float(np.std(px[1:] / px[:-1] - 1, ddof=1) * math.sqrt(252)) if len(px) == 21 else None
@@ -1321,6 +1401,11 @@ def main():
                     "Waiting for the Forecaster. It runs after each US trading day; this card is offered once it has a forecast."
             else:
                 x["forecast_line"] = f.get("line")
+    # the whole portfolio first: each idea's effect on the largest holding and on the bad year, and the same money in the index fund
+    try:
+        pfirst = portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct)
+    except Exception as e:
+        pfirst = {"error": "%s: %s" % (type(e).__name__, str(e)[:120])}
     reasons = {"RULE:*": "the entry signal was for one day only", "SCORE:*": "the share no longer passes five of the seven checks", "TEST:*": "the test is over",
                "CORE": "part of the house core is now held, or the strategy changed"}
     if keeps:
@@ -1398,6 +1483,7 @@ def main():
                           "held": sorted(t for t, r in pchk.items() if r.get("ok") is False),
                           "one_source": sorted(t for t, r in pchk.items() if r.get("ok") is None), "by": pchk}
     out["track"] = track_note
+    out["portfolio_first"] = pfirst
     out["notified_keys"] = {k: v for k, v in told.items() if (age_days(v, now) or 0) < 30}
     out["morning"] = morning(prev.get("morning"), cards, plans, snap, quant, hp, smart, answers, now)
     E.wj("state/decisions.json", out)

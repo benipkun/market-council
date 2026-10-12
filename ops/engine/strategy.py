@@ -345,7 +345,7 @@ def money(v):
     return ("$%.1fm" % (v / 1e6)) if v >= 1e6 else ("$%.0fk" % (v / 1e3)) if v >= 1e3 else ("$%.0f" % v)
 
 
-def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, ages=None, dropped=None):
+def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, ages=None, dropped=None, fair_rng=None):
     # The seven checks, one place for the watchlist and the wide screen. Each check carries today's reading, the line it is
     # measured against, how far the reading is from that line, the age of its data and, when it fails, what would make it pass.
     checks, ages = [], ages or {}
@@ -411,6 +411,20 @@ def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, age
             ("results reported %s" % rv.get("reported")) if rv.get("reported") else None)
     else:
         add("drift", "Last results beat forecasts and the price rose over five days", None, "no earnings data", "an earnings history from the free source")
+    # fair value is a range, not a point: when the price sits inside the range the valuation cannot say cheap or dear, so the
+    # check reads "unclear" and does not count as a pass
+    if fair_rng and last and fair_rng.get("low") is not None and fair_rng.get("high") is not None:
+        v = [k for k in checks if k["id"] == "value"][0]
+        lo, hi = float(fair_rng["low"]), float(fair_rng["high"])
+        v["reading"] = "price $%.2f; our fair value runs from $%.2f to $%.2f across reasonable assumptions, and depends most on %s" % (last, lo, hi, fair_rng.get("most_sensitive") or "the assumptions")
+        v["line"] = "price under the lowest of our fair-value estimates"
+        if lo <= last <= hi:
+            v.update({"pass": None, "unclear": True, "detail": "unclear: the price is inside our fair-value range of $%.2f to $%.2f" % (lo, hi),
+                      "needs": "a price under $%.2f, the lowest of our fair-value estimates" % lo, "margin": "inside the range, so neither a pass nor a fail"})
+        else:
+            v.update({"pass": bool(last < lo), "detail": ("price is under even the lowest estimate, $%.2f" % lo) if last < lo else ("price is above even the highest estimate, $%.2f" % hi),
+                      "needs": None if last < lo else "a price under $%.2f, the lowest of our fair-value estimates" % lo,
+                      "margin": ("%s under the lowest estimate" % E.pc(1 - last / lo, 0)) if last < lo else ("%s over the highest estimate" % E.pc(last / hi - 1, 0))})
     # a check dropped by the written rule of the live track record (track.py) no longer counts; the pass mark shrinks in proportion
     dropped = dropped or {}
     for k in checks:
@@ -440,7 +454,7 @@ def edge_scores(ix, spy_rows, lim, held):
                 "insiders": (sm.get("insiders") or {}).get("as_of"), "insiders_kept": (sm.get("insiders") or {}).get("kept"),
                 "holders": (sm.get("known_investors") or {}).get("as_of"), "holders_kept": (sm.get("known_investors") or {}).get("kept")}
         r = score_checks(c.get("mos"), c.get("fair"), ((card.get("valuation") or {}).get("assumptions") or {}).get("ebit_margin"), px, spy_mom,
-                         sm.get("insiders"), (sm.get("known_investors") or {}).get("holders"), (card.get("earnings") or {}).get("review"), nxt, ages, dropped)
+                         sm.get("insiders"), (sm.get("known_investors") or {}).get("holders"), (card.get("earnings") or {}).get("review"), nxt, ages, dropped, c.get("fair_range"))
         r.update({"t": t, "held": t in held, "name": card.get("name") or t, "price": r4(float(px[-1]), 2) if px else None, "source": c.get("source") or "watchlist",
                   "mos": c.get("mos"), "fair": c.get("fair")})
         rows.append(r)

@@ -145,12 +145,13 @@ def main():
         except Exception as e:
             v = {"status": "not valued", "reason": str(e)[:80]}
         x["fair"], x["mos"] = v.get("fair_value_per_share"), v.get("margin_of_safety")
+        x["fair_rng"] = v.get("fair_range")
         x["em"] = (v.get("assumptions") or {}).get("ebit_margin")
         x["rv"] = None
         if es:
             rep = RS.mdy(es[0].get("dateReported"))
             x["rv"] = {"surprise_pct": RS.num(es[0].get("percentageSurprise")), "move_5d": RS.price_move(x["t"], rep or "", 5), "reported": rep}
-        x["part"] = ST.score_checks(x["mos"], x["fair"], x["em"], x["pxs"], spy_mom, None, None, x["rv"])
+        x["part"] = ST.score_checks(x["mos"], x["fair"], x["em"], x["pxs"], spy_mom, None, None, x["rv"], None, None, None, x.get("fair_rng"))
         done.append(x)
     funnel["with_statements"] = len(done)
     finalists = sorted([x for x in done if x["part"]["score"] >= 3], key=lambda z: (-z["part"]["score"], -z["mom"]))
@@ -174,7 +175,7 @@ def main():
                            "sale_value_90d": sum(abs(z["value"] or 0) for z in sells)}
             kh = RS.dataroma(x["t"], 1)
             time.sleep(0.6)
-        r = ST.score_checks(x["mos"], x["fair"], x["em"], x["pxs"], spy_mom, ins, kh, x["rv"])
+        r = ST.score_checks(x["mos"], x["fair"], x["em"], x["pxs"], spy_mom, ins, kh, x["rv"], None, None, None, x.get("fair_rng"))
         r.update({"t": x["t"], "name": x["name"], "region": x["region"], "country": x["country"], "sector": x["sector"], "cap_bn": round(x["cap"] / 1e9, 1),
                   "price": round(x["last"], 2), "momentum": round(x["mom"], 4), "on_watchlist": x["t"] in mine,
                   "beta": round(x["beta"], 3) if x.get("beta") is not None else None})

@@ -156,6 +156,30 @@ def dcf(tk, fin, price, shares, beta, rf, meta, save=True):
     if fair is None or fair <= 0:
         return {"status": "not meaningful", "as_of": iso(), "assumptions": A,
                 "reason": "At today's operating margin (%.1f%%) the forecast cash flows do not cover the net debt, so the model gives no positive value. That says the business must improve its margins for the shares to be worth anything on cash flow; it is not a price target." % (100 * margin)}
+    # Fair value as a range: the same model with one assumption at a time moved to each end of what is reasonable. A single
+    # figure hides how much the answer depends on inputs nobody knows; the range shows it, and names the input that matters most.
+    frange = None
+    try:
+        m3 = margins[:3] if len(margins) >= 3 else [margin * 0.8, margin * 1.2]
+        span = []
+        for what, key, a_lo, a_hi in (("the discount rate", "wacc", A["wacc"] + 0.01, A["wacc"] - 0.01),
+                                      ("starting growth", "growth_start", max(0.0, A["growth_start"] - 0.03), A["growth_start"] + 0.03),
+                                      ("the operating margin", "ebit_margin", min(min(m3), margin), max(max(m3), margin)),
+                                      ("long-run growth", "terminal_growth", A["terminal_growth"] - 0.005, A["terminal_growth"] + 0.005),
+                                      ("capital spending", "capex_pct_revenue", A["capex_pct_revenue"] * 1.2, A["capex_pct_revenue"] * 0.8)):
+            vals = []
+            for v in (a_lo, a_hi):
+                b = dict(A)
+                b[key] = v
+                vals.append(max(0.0, run(b)[3] or 0.0))
+            span.append({"what": what, "low": r(min(vals), 2), "high": r(max(vals), 2), "from": r(a_lo), "to": r(a_hi)})
+        f_lo, f_hi = min(x["low"] for x in span), max(x["high"] for x in span)
+        widest = max(span, key=lambda x: x["high"] - x["low"])
+        frange = {"low": r(f_lo, 2), "high": r(f_hi, 2), "most_sensitive": widest["what"], "by": span,
+                  "verdict": "under" if price < f_lo else "over" if price > f_hi else "unclear",
+                  "note": "Each line moves one assumption and keeps the rest: the discount rate by one point either way, starting growth by three points, the operating margin across its last three years, long-run growth by half a point, capital spending by a fifth. The range runs from the lowest to the highest result. When the price is inside it, the valuation cannot say whether the share is cheap or dear."}
+    except Exception:
+        frange = None
     sens = []
     for dw in (-0.01, 0.0, 0.01):
         line = []
@@ -179,6 +203,7 @@ def dcf(tk, fin, price, shares, beta, rf, meta, save=True):
     out = {"status": "valued", "as_of": iso(), "statement_years": years, "assumptions": A, "forecast": rows, "terminal_value": r(tv, 0),
            "enterprise_value": r(ev, 0), "fair_value_per_share": None if foreign else r(fair * 1000.0 / 1000.0, 2), "price": r(price, 2),
            "margin_of_safety": None if foreign or not fair or fair <= 0 else r(1 - price / fair),
+           "fair_range": None if foreign else frange,
            "sensitivity": {"wacc": [r(A["wacc"] - 0.01), r(A["wacc"]), r(A["wacc"] + 0.01)], "terminal_growth": [r(TERMINAL_G - 0.005), TERMINAL_G, r(TERMINAL_G + 0.005)], "fair_value": None if foreign else sens},
            "risks": risks,
            "method": "Five years of free cash flow = operating profit less tax, plus depreciation, less capital spending and working capital; then a terminal value; discounted at the stated rate; less net debt; divided by shares. Every input is listed under assumptions and is an estimate.",
@@ -360,6 +385,7 @@ def main():
         sm = (c.get("smart_money") or {}).get("insiders") or {}
         index.append({"t": t, "as_of": c["as_of"], "held": t in held, "source": "watchlist" if t in watch else "wide screen", "name": c.get("name"),
                       "valued": v.get("status") == "valued", "fair": v.get("fair_value_per_share"),
+                      "fair_range": ({k: v["fair_range"].get(k) for k in ("low", "high", "most_sensitive", "verdict")} if v.get("fair_range") else None),
                       "mos": v.get("margin_of_safety"), "rating": (c.get("analysts") or {}).get("rating"), "target": (c.get("analysts") or {}).get("target_mean"),
                       "insider_buys_90d": sm.get("open_market_buys_90d"), "insider_sales_90d": sm.get("open_market_sales_90d"), "error": c.get("error")})
         recent = (now() - datetime.timedelta(days=14)).strftime("%Y-%m-%d")
