@@ -15,6 +15,7 @@ os.environ.setdefault("MC_QUICK", "1")
 import numpy as np  # noqa: E402
 
 import decide as D  # noqa: E402
+import forecast as F  # noqa: E402
 import health as H  # noqa: E402
 import lab as L  # noqa: E402
 import quant as Q  # noqa: E402
@@ -200,6 +201,84 @@ class Health(unittest.TestCase):
         out3, send3, over3 = H.assess(good, dates, {}, None, told, self.at("2026-10-13T12:30:00"))
         self.assertEqual(over3, ["data:quant:stale"])                          # and one message when it clears
         self.assertEqual(send3[0]["title"], "Market Council: back to normal")
+
+
+class Forecasts(unittest.TestCase):
+    def test_words(self):
+        self.assertEqual(F.words(0.62), "about 3 in 5")
+        self.assertEqual(F.words(0.50), "about 1 in 2")
+        self.assertEqual(F.words(0.67), "about 2 in 3")
+
+    def test_range_covers_every_source(self):
+        f = F.combine(0.60, 0.64, 400, 100, 0.62)
+        self.assertAlmostEqual(f["p"], 0.62, places=3)
+        self.assertFalse(f["disagree"])
+        self.assertLessEqual(f["lo"], 0.60)
+        self.assertGreaterEqual(f["hi"], 0.64)
+
+    def test_disagreement_widens_the_range(self):
+        g = F.combine(0.30, 0.60, 400, 100, None)
+        self.assertTrue(g["disagree"])
+        self.assertLess(g["lo"], 0.30)
+        self.assertGreater(g["hi"], 0.60)
+
+    def test_no_extreme_figure_without_cases(self):
+        f = F.combine(0.97, 0.99, 5, 5, None)                 # five cases: the base rate is shown but not counted
+        self.assertEqual(f["p"], 0.9)
+        self.assertTrue(f["capped"] and f["few"])
+        g = F.combine(0.97, 0.95, 500, 120, None)             # with the evidence, an extreme figure may stand
+        self.assertAlmostEqual(g["p"], 0.96, places=3)
+        self.assertFalse(g["capped"])
+
+    def test_which_level_first(self):
+        P = np.array([[1.05, 1.12, 0.80], [0.95, 0.88, 1.20], [1.00, 1.00, 1.00]])
+        a, b = F.touch_first(P, 1.10, 0.90)
+        self.assertEqual(a.tolist(), [True, False, False])
+        self.assertEqual(b.tolist(), [False, True, False])
+
+    def test_log_is_weekly_and_cannot_be_edited_unnoticed(self):
+        entries, idx = [], {"2026-10-09": 100, "2026-10-12": 101, "2026-10-19": 106}
+        f = {"t": "AAA", "kind": "up", "h": "3m", "d": 63, "due": "2027-01-08", "q": "?", "p": 0.6, "lo": 0.5, "hi": 0.7, "plain": 0.55, "ref": 50.0, "move": 0.08}
+        self.assertEqual(F.append_log(entries, [f], "2026-10-09", idx), 1)
+        self.assertEqual(F.append_log(entries, [f], "2026-10-12", idx), 0)                  # the same week: nothing new
+        self.assertEqual(F.append_log(entries, [dict(f, ref=56.0)], "2026-10-12", idx), 1)  # unless the price moved a lot
+        self.assertEqual(F.append_log(entries, [f], "2026-10-19", idx), 1)                  # and again a week later
+        self.assertTrue(F.chain_ok(entries))
+        entries[0]["p"] = 0.9
+        self.assertFalse(F.chain_ok(entries))
+
+    def test_marked_right_or_wrong_by_code(self):
+        by = {"AAA": {"t": "AAA", "x": np.array([50.0, 51.0, 44.0, 52.0, 53.0]), "a": 0, "b": 5}}
+        ctx = {"idx": {"d0": 0}, "spy": np.array([100.0, 100.0, 100.0, 100.0, 101.0])}
+        e = {"made": "d0", "t": "AAA", "d": 4}
+        self.assertEqual(F.score_entry(dict(e, kind="up"), by, ctx), 1)
+        self.assertEqual(F.score_entry(dict(e, kind="fall10"), by, ctx), 1)
+        self.assertEqual(F.score_entry(dict(e, kind="fall25"), by, ctx), 0)
+        self.assertEqual(F.score_entry(dict(e, kind="beat"), by, ctx), 1)
+        self.assertEqual(F.score_entry(dict(e, kind="stop_first", up=1.05, dn=0.90), by, ctx), 1)
+        late = dict(e, d=10)                                                             # its date has not come yet
+        self.assertIsNone(F.score_entry(dict(late, kind="up"), by, ctx))
+        self.assertEqual(F.score_entry(dict(late, kind="fall10"), by, ctx), 1)           # a fall counts the day it happens
+        self.assertIsNone(F.score_entry(dict(late, kind="fall25"), by, ctx))
+
+    def test_score_table(self):
+        P, O = [0.7] * 40 + [0.3] * 40, [1] * 28 + [0] * 12 + [1] * 12 + [0] * 28
+        s = F.summarise(P, O, [0.5] * 80)
+        self.assertAlmostEqual(s["brier"], 0.21, places=4)
+        self.assertTrue(s["beats_fifty"])
+        row = [b for b in s["bands"] if abs(b["band"] - 0.7) < 1e-9][0]
+        self.assertEqual((row["n"], row["happened"]), (40, 0.7))
+        self.assertAlmostEqual(s["adjust"]["0.7"], 0.0, places=6)
+        self.assertTrue(F.summarise([0.7] * 10, [1] * 10, [0.5] * 10)["verdict"].startswith("Too early"))
+
+    def test_setups_use_only_the_past(self):
+        x = np.linspace(50.0, 100.0, 400)
+        c = F.cells_for(x)
+        self.assertEqual(int(c[100]), -1)                    # not enough history yet that day
+        self.assertEqual(int(c[-1]), 6 + 3 + 0)              # above its average, up over three months, calm
+        x2 = x.copy()
+        x2[-1] = 1.0                                         # change the last day only
+        self.assertEqual(F.cells_for(x2)[:-1].tolist(), c[:-1].tolist())
 
 
 if __name__ == "__main__":
