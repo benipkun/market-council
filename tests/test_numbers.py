@@ -20,6 +20,7 @@ import health as H  # noqa: E402
 import lab as L  # noqa: E402
 import quant as Q  # noqa: E402
 import strategy as S  # noqa: E402
+import track as T  # noqa: E402
 
 UTC = datetime.timezone.utc
 
@@ -114,7 +115,8 @@ class Scorecard(unittest.TestCase):
                  ins={"open_market_buys_90d": 1, "buy_value_90d": 1000.0, "sale_value_90d": 0.0, "open_market_sales_90d": 0},
                  kh=[{"recent_activity": "Add 5%"}, {"recent_activity": "Reduce"}], rv={"surprise_pct": 4.0, "move_5d": 0.02})
         a.update(kw)
-        res = S.score_checks(a["mos"], a["fair"], a["em"], a["px"], a["spy_mom"], a["ins"], a["kh"], a["rv"])
+        res = S.score_checks(a["mos"], a["fair"], a["em"], a["px"], a["spy_mom"], a["ins"], a["kh"], a["rv"], None, None, a.get("dropped"))
+        self.last = res
         return dict((c["id"], c["pass"]) for c in res["checks"])
 
     def test_all_seven_pass(self):
@@ -279,6 +281,63 @@ class Forecasts(unittest.TestCase):
         x2 = x.copy()
         x2[-1] = 1.0                                         # change the last day only
         self.assertEqual(F.cells_for(x2)[:-1].tolist(), c[:-1].tolist())
+
+
+class TrackRecord(unittest.TestCase):
+    def test_every_idea_is_logged_once_at_that_days_close(self):
+        cards = [{"id": "I1", "kind": "idea", "ticker": "AAA", "created": "2026-10-09T10:00:00Z", "key": "SCORE:AAA", "greyed": True,
+                  "checks": [{"id": "trend", "pass": True}, {"id": "value", "pass": False}]},
+                 {"id": "T1", "kind": "test"}, {"id": "I2", "kind": "idea", "ticker": None}]
+
+        def cache(t):
+            return [("2026-10-08", 49.0), ("2026-10-09", 50.0), ("2026-10-12", 55.0)]
+        entries, added, ok = T.log_cards(cards, cache, "2026-10-12T08:00:00Z", [])
+        self.assertEqual((added, ok), (1, True))                               # the greyed idea is logged too; the test card is not an idea
+        e = entries[0]
+        self.assertEqual((e["day"], e["price"], e["offered"], e["late"], e["source"], e["score"]), ("2026-10-09", 50.0, False, True, "SCORE", 1))
+        entries, added, ok = T.log_cards(cards, cache, "2026-10-13T08:00:00Z", entries)
+        self.assertEqual(added, 0)                                             # never a second time
+        entries[0]["price"] = 40.0                                             # an edit afterwards is detected
+        self.assertFalse(T.chain_ok(entries))
+
+    def test_measured_against_the_index_and_the_list_after_fees(self):
+        cal = ["d%02d" % k for k in range(30)]
+
+        def share(t, v):
+            return {"t": t, "x": np.array(v, dtype=float), "a": 0, "b": 30, "listed": True}
+        ctx = {"cal": cal, "idx": dict((d, k) for k, d in enumerate(cal)), "spy": np.array([100 + 0.5 * k for k in range(30)]), "n": 30}
+        rows = T.measure([{"id": "I1", "t": "AAA", "day": "d00", "price": 100.0, "offered": True, "checks": {"trend": True}}],
+                         [share("AAA", [100.0 + k for k in range(30)]), share("BBB", [100.0] * 30)], ctx)
+        m = rows[0]["m"]["1m"]
+        self.assertAlmostEqual(m["idea"], 0.21 - 0.005, places=4)              # up 21%, less half a percent of fees
+        self.assertAlmostEqual(m["spy"], 0.105 - 0.005, places=4)
+        self.assertAlmostEqual(m["list"], (0.205 - 0.005) / 2, places=4)       # the average of the two shares on the list
+        self.assertAlmostEqual(m["beat"], 0.5, places=3)
+        self.assertNotIn("3m", rows[0]["m"])                                   # that mark has not been reached
+
+    def test_a_dropped_check_stops_counting(self):
+        sc = Scorecard()
+        c = sc.checks(dropped={"value": {"on": "2027-06-01"}})
+        self.assertIsNone(c["value"])
+        self.assertEqual((sc.last["of"], sc.last["pass_mark"], sc.last["score"]), (6, 5, 6))
+        self.assertTrue(sc.last["qualifies"])
+
+    def test_drop_rule_needs_thirty_ideas_at_both_marks(self):
+        def row(v3, v6):
+            m = {}
+            if v3 is not None:
+                m["3m"] = {"idea": v3, "spy": 0.02, "list": 0.03}
+            if v6 is not None:
+                m["6m"] = {"idea": v6, "spy": 0.04, "list": 0.05}
+            return {"checks": {"trend": True}, "m": m}
+        few = [row(-0.05, -0.05)] * 29
+        self.assertEqual(T.judge_checks(few, {}, "2027-06-01")[2], {})         # 29 losing ideas: not yet
+        many = [row(-0.05, -0.05)] * 30
+        out, proven, new = T.judge_checks(many, {}, "2027-06-01")
+        self.assertEqual(list(new), ["trend"])
+        self.assertEqual(out["trend"]["state"], "dropped")
+        good = [row(0.10, 0.12)] * 30
+        self.assertEqual(T.judge_checks(good, {}, "2027-06-01")[1], ["trend"])  # and proven the other way round
 
 
 if __name__ == "__main__":
