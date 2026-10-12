@@ -116,7 +116,16 @@ def hist(sym):
     rows = []
     if not E.OFFLINE:
         try:
-            rows = E.fetch_cnbc(sym, 946684800)
+            # The source returns nothing when asked for days before a fund existed, so step the start forward
+            # (2000, Dec 2004, 2006, 2012) until it answers. Gold's fund began in November 2004.
+            for start in (946684800, 1101859200, 1136073600, 1325376000):
+                try:
+                    rows = E.fetch_cnbc(sym, start)
+                except Exception:
+                    rows = []
+                if len(rows) > 1000:
+                    break
+                time.sleep(0.3)
             if len(rows) > 1000:
                 os.makedirs(E.CACHE, exist_ok=True)
                 with open(path, "w", encoding="utf-8", newline="") as f:
