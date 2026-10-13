@@ -1499,9 +1499,9 @@ if(window.MC&&MC.onShow)MC.onShow(t);
 }
 function prefill(d){
 F.act=d.act||"buy"; F.mode="usd"; F.cur="usd";
-/* only the ticker is carried over; the amount is typed by hand, because the fill is rarely the planned figure */
-$("f-tick").value=d.t||"";
-["f-amt","f-qty","f-px","f-fee","f-why","f-exit"].forEach(function(i){$(i).value="";});
+/* the ticker and the amount you approved are carried over; every field stays open to change */
+$("f-tick").value=d.t||""; $("f-amt").value=d.amt||"";
+["f-qty","f-px","f-fee","f-why","f-exit"].forEach(function(i){$(i).value="";});
 fstat("",""); syncForm(); show("log");
 $("f-amt").focus();
 }
