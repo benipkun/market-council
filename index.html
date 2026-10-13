@@ -391,7 +391,7 @@ remembered only in this browser.
 <details class="sub" id="goal-edit">
 <summary>Set or change the goal</summary>
 <div class="two">
-<label class="fld"><span>Target (HUF)</span><input id="g-amt" type="number" inputmode="numeric" min="0" step="10000" placeholder="5000000"></label>
+<label class="fld"><span>Target (HUF)</span><input id="g-amt" type="text" inputmode="numeric" autocomplete="off" placeholder="5000000"></label>
 <label class="fld"><span>By (month)</span><input id="g-by" type="month"></label>
 </div>
 <div class="gap"><button class="btn" id="g-save" style="width:100%">Save goal</button></div>
@@ -435,35 +435,35 @@ A starting point for your return, not tax advice. Also worth asking your broker:
 spellcheck="false" placeholder="e.g. ABC" maxlength="12">
 </label>
 <div class="qc" id="q-tick"></div>
-<div class="fld" id="w-mode"><span>Amount entered as</span>
+<div class="fld" id="w-mode"><span>What you sold</span>
 <div class="seg" id="f-mode">
-<button data-v="usd" aria-pressed="true">Dollars</button>
-<button data-v="qty" aria-pressed="false">Shares &times; price</button>
+<button data-v="usd" aria-pressed="true">Part of it</button>
 <button data-v="all" aria-pressed="false" id="m-all">Whole position</button>
 </div>
 </div>
+<div class="hintline" id="w-how">Type what your broker shows: the total in dollars, the number of shares, the price, or any two of them. Nothing is filled in for you.</div>
 <div class="fld" id="w-cur" hidden><span>Currency</span>
 <div class="seg" id="f-cur"><button data-v="usd" aria-pressed="true">USD</button><button data-v="huf" aria-pressed="false">HUF</button></div>
 </div>
 <label class="fld" id="w-amt"><span id="amt-lbl">Amount in $</span>
-<input id="f-amt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="80.00">
+<input id="f-amt" type="text" inputmode="decimal" autocomplete="off" placeholder="80.00">
 </label>
 <div class="qc" id="q-amt"></div>
 <div class="two" id="w-qty" hidden>
 <label class="fld"><span>Shares</span>
-<input id="f-qty" type="number" inputmode="decimal" step="any" min="0" placeholder="2"></label>
+<input id="f-qty" type="text" inputmode="decimal" autocomplete="off" placeholder="2"></label>
 <label class="fld"><span>Price each ($)</span>
-<input id="f-px" type="number" inputmode="decimal" step="0.0001" min="0" placeholder="38.40"></label>
+<input id="f-px" type="text" inputmode="decimal" autocomplete="off" placeholder="38.40"></label>
 </div>
 <label class="fld" id="w-fee"><span>Fees in $ (commission + currency conversion)</span>
-<input id="f-fee" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+<input id="f-fee" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00">
 </label>
 <div id="w-journal">
 <label class="fld"><span>Why (optional)</span>
 <input id="f-why" type="text" maxlength="280" placeholder="e.g. oversold after the guidance cut, long-term view unchanged"></label>
 <label class="fld"><span>What would make you exit (optional)</span>
 <input id="f-exit" type="text" maxlength="280" placeholder="e.g. another guidance cut, or up 30%"></label>
-<div class="hintline">Notes are saved with the trade in your repository, which is public like the rest of your records.</div>
+<div class="hintline">Notes are saved with the trade in your private records.</div>
 </div>
 <div class="hintline" id="f-hint"></div>
 <div class="prev mono bad" id="f-prev">Fill in the fields above</div>
@@ -511,7 +511,7 @@ loop and changes nothing in your records.</p>
 <label class="fld" style="margin-top:0"><span>Ticker</span>
 <input id="a-tick" type="text" autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="ABC" maxlength="12"></label>
 <label class="fld" style="margin-top:0"><span>Price ($)</span>
-<input id="a-px" type="number" inputmode="decimal" step="0.01" min="0" placeholder="36.00"></label>
+<input id="a-px" type="text" inputmode="decimal" autocomplete="off" placeholder="36.00"></label>
 </div>
 <div class="seg sm gap" id="a-dir"><button data-v="below" aria-pressed="true">Falls below</button><button data-v="above" aria-pressed="false">Rises above</button></div>
 <div class="gap"><button class="btn" id="a-add" style="width:100%">Add alert</button></div>
@@ -590,6 +590,8 @@ return null;
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
 return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function num(v){if(v===null||v===undefined||v==="")return null;var n=Number(v);return isFinite(n)?n:null;}
+/* a figure typed by hand: a comma or a dot both mean the decimal point, spaces are ignored, and it may not be negative */
+function dec(v){var n=num(String(v==null?"":v).replace(/\s/g,"").replace(",","."));return n!=null&&n>=0?n:null;}
 function usd(v,signed){
 var n=num(v); if(n==null)return DASH;
 var s=Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -967,15 +969,15 @@ function segSet(id,val){
 function syncForm(){
 var cash=F.act==="deposit"||F.act==="withdraw";
 if(cash)F.mode="usd"; else F.cur="usd";
-if(F.act!=="sell"&&F.mode==="all")F.mode="usd";
+if(F.mode==="qty"||(F.act!=="sell"&&F.mode==="all"))F.mode="usd";
 segSet("f-act",F.act); segSet("f-mode",F.mode); segSet("f-cur",F.cur);
-$("w-tick").hidden=cash; $("q-tick").hidden=cash; $("w-mode").hidden=cash; $("w-cur").hidden=!cash;
+$("w-tick").hidden=cash; $("q-tick").hidden=cash; $("w-mode").hidden=cash||F.act!=="sell"; $("w-how").hidden=cash||F.mode==="all"; $("w-cur").hidden=!cash;
 $("m-all").hidden=F.act!=="sell";
-$("w-amt").hidden=F.mode!=="usd"; $("q-amt").hidden=F.mode!=="usd"||F.cur==="huf";
-$("w-qty").hidden=F.mode!=="qty";
+$("w-amt").hidden=F.mode!=="usd"; $("q-amt").hidden=true;
+$("w-qty").hidden=cash||F.mode!=="usd";
 $("w-fee").hidden=cash; $("w-journal").hidden=cash; $("paste-box").hidden=cash;
-$("amt-lbl").textContent=F.cur==="huf"?"Amount in forints":"Amount in $";
-$("f-amt").step=F.cur==="huf"?"1":"0.01"; $("f-amt").placeholder=F.cur==="huf"?"30000":"80.00";
+$("amt-lbl").textContent=F.cur==="huf"?"Amount in forints":(cash?"Amount in $":"Total in $");
+$("f-amt").placeholder=F.cur==="huf"?"30000":"80.00";
 quickChips(); preview();
 }
 function quickChips(){
@@ -996,7 +998,7 @@ $("q-amt").innerHTML=(hint?'<button class="hint" data-qa="'+hint.toFixed(2)+'">'
 function buildLine(){
 var cash=F.act==="deposit"||F.act==="withdraw";
 var tk=$("f-tick").value.trim().toUpperCase().replace(/[^A-Z0-9.-]/g,"");
-var amt=num($("f-amt").value), qty=num($("f-qty").value), px=num($("f-px").value), fee=num($("f-fee").value);
+var amt=dec($("f-amt").value), qty=dec($("f-qty").value), px=dec($("f-px").value), fee=dec($("f-fee").value);
 var usdv=null, body;
 if(cash){
 if(!(amt>0))return {err:"Enter the amount."};
@@ -1007,10 +1009,17 @@ return {text:F.act+" "+Math.round(amt)+" huf",usd:r?amt/r:null,huf:Math.round(am
 return {text:F.act+" "+amt.toFixed(2)+" usd",usd:amt};
 }
 if(!tk)return {err:"Enter a ticker."};
-if(F.mode==="usd"){if(!(amt>0))return {err:"Enter the dollar amount."};body=amt.toFixed(2)+" usd";usdv=amt;}
-else if(F.mode==="qty"){if(!(qty>0&&px>0))return {err:"Enter shares and price."};body=qty+" @ "+px;usdv=qty*px;}
-else body="all";
-return {text:F.act+" "+tk+" "+body+(fee>0?" fee "+fee.toFixed(2):""),usd:usdv,fee:fee||0,ticker:tk};
+var note=null;
+if(F.mode==="all")body="all";
+else{
+/* any two of total, shares and price are enough; the total and the share count are what the broker confirms, so they win */
+if(amt>0&&qty>0){var p2=+(amt/qty).toFixed(6);if(px>0&&Math.abs(px/p2-1)>0.01)note="Price worked out from the total and the shares: $"+p2+" each, not the $"+px+" you typed.";body=qty+" @ "+p2;usdv=amt;}
+else if(qty>0&&px>0){body=qty+" @ "+px;usdv=qty*px;}
+else if(amt>0&&px>0){var q2=+(amt/px).toFixed(6);body=q2+" @ "+px;usdv=amt;}
+else if(amt>0){body=amt.toFixed(2)+" usd";usdv=amt;}
+else return {err:"Enter the total in dollars, or the shares and the price."};
+}
+return {text:F.act+" "+tk+" "+body+(fee>0?" fee "+fee.toFixed(2):""),usd:usdv,fee:fee||0,ticker:tk,note:note};
 }
 function preview(){
 var L=buildLine(), p=$("f-prev"), h=$("f-hint"), go=$("f-go");
@@ -1018,6 +1027,7 @@ p.textContent=L.text||L.err; p.className="prev mono"+(L.text?"":" bad");
 go.disabled=!L.text;
 go.textContent=tokenOn()?"Log it":"Continue on GitHub "+ARROW;
 h.className="hintline"; h.textContent="";
+if(L.note){h.className="hintline warn";h.textContent=L.note;}
 var t=S.treasury;
 if(L.huf&&L.usd)h.textContent="About "+usd(L.usd)+" at the latest MNB rate.";
 else if(L.huf&&!L.usd){h.className="hintline warn";h.textContent="No exchange rate stored yet; the inbox will fetch one.";}
@@ -1337,7 +1347,7 @@ return '<a href="'+esc(x.url)+'" style="display:flex;gap:12px;align-items:center
 }
 var ADIR="below";
 function addAlert(){
-var tk=($("a-tick").value||"").trim().toUpperCase().replace(/[^A-Z0-9.-]/g,""), px=num($("a-px").value);
+var tk=($("a-tick").value||"").trim().toUpperCase().replace(/[^A-Z0-9.-]/g,""), px=dec($("a-px").value);
 if(!tk||!(px>0)){statBox("al-stat","err","Enter a ticker and a price.");return;}
 var line="alert "+tk+" "+ADIR+" "+px.toFixed(2);
 send(line+NL,"setting",tk+" "+ADIR+" "+usd(px),"al-stat").then(function(ok){if(ok){$("a-tick").value="";$("a-px").value="";}});
@@ -1489,10 +1499,11 @@ if(window.MC&&MC.onShow)MC.onShow(t);
 }
 function prefill(d){
 F.act=d.act||"buy"; F.mode="usd"; F.cur="usd";
-$("f-tick").value=d.t||""; $("f-amt").value=d.amt||"";
-["f-qty","f-px","f-fee","f-why","f-exit"].forEach(function(i){$(i).value="";});
+/* only the ticker is carried over; the amount is typed by hand, because the fill is rarely the planned figure */
+$("f-tick").value=d.t||"";
+["f-amt","f-qty","f-px","f-fee","f-why","f-exit"].forEach(function(i){$(i).value="";});
 fstat("",""); syncForm(); show("log");
-if(!d.t&&(F.act==="deposit"||F.act==="withdraw"))$("f-amt").focus();
+$("f-amt").focus();
 }
 function renderAll(offline){
 health(offline); renderToday(); renderPortfolio(); renderToken(); quickChips(); preview(); renderWatch(); renderThesis(); renderResearch(); renderChat(); renderLogRecent();
@@ -1535,7 +1546,7 @@ case "pf-hide": store(K.pf,null); renderPortfolio(); renderToday(); quickChips()
 case "a-add": addAlert(); break;
 case "chat-send": sendChat(); break;
 case "g-save":
-var ga=num($("g-amt").value), gb=$("g-by").value;
+var ga=dec($("g-amt").value), gb=$("g-by").value;
 if(!(ga>0)||!/^[0-9]{4}-[0-9]{2}$/.test(gb)){statBox("goal-stat","err","Enter a forint amount and a month.");break;}
 send("goal "+Math.round(ga)+" huf by "+gb+NL,"setting","goal "+huf(ga)+" by "+gb,"goal-stat"); break;
 case "r-save":
