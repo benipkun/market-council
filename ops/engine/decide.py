@@ -464,7 +464,7 @@ def holds(pos, quant, ix, digest, ledger, prof):
     return out
 
 
-def goal(plan, nav, fx, pvol, pmu, now):
+def goal(plan, nav, fx, pvol, pmu, now, contrib=None):
     g = (plan or {}).get("goal") or {}
     rates = (fx or {}).get("rates") or []
     if not g.get("amount_huf") or not g.get("by") or not rates or not pvol:
@@ -479,11 +479,21 @@ def goal(plan, nav, fx, pvol, pmu, now):
     z = (math.log(need / v0) - drift) / (pvol * math.sqrt(yrs))
     rm = (1 + pmu) ** (1 / 12.0) - 1
     fv = ((1 + rm) ** months - 1) / rm if rm > 0 else months
-    return {"amount_huf": need, "by": g["by"], "months": months, "usd_huf": r2(rate), "rate_date": rates[-1].get("date"), "value_now_huf": r2(v0, 0),
-            "chance_without_adding": r2(1 - phi(z), 4), "middle_outcome_huf": r2(v0 * math.exp(drift), 0),
-            "monthly_needed_huf": r2(max(0.0, (need - v0 * (1 + pmu) ** yrs) / fv), 0), "return_assumed": r2(pmu, 4), "vol_assumed": r2(pvol, 4),
-            "method": "Today's value in forint, grown at the engine's return estimate with the portfolio's volatility; the monthly amount is what "
-                      "closes the gap at that same return. An estimate, sensitive to the return assumed."}
+    out = {"amount_huf": need, "by": g["by"], "months": months, "usd_huf": r2(rate), "rate_date": rates[-1].get("date"), "value_now_huf": r2(v0, 0),
+           "chance_without_adding": r2(1 - phi(z), 4), "middle_outcome_huf": r2(v0 * math.exp(drift), 0),
+           "monthly_needed_huf": r2(max(0.0, (need - v0 * (1 + pmu) ** yrs) / fv), 0), "return_assumed": r2(pmu, 4), "vol_assumed": r2(pvol, 4),
+           "method": "Today's value in forint, grown at the engine's return estimate with the portfolio's volatility; the monthly amount is what "
+                     "closes the gap at that same return. An estimate, sensitive to the return assumed."}
+    # the money you plan to add every month (state/contribution.json), counted in forint and in dollars at the latest rate
+    c = contrib or {}
+    if c.get("amount") and str(c.get("currency") or "HUF").upper() == "HUF" and str(c.get("frequency") or "monthly") == "monthly":
+        m = float(c["amount"])
+        left = need - m * fv
+        zp = (math.log(left / v0) - drift) / (pvol * math.sqrt(yrs)) if left > 0 else None
+        out.update({"monthly_planned_huf": r2(m, 0), "monthly_planned_usd": r2(m / rate), "with_plan_middle_huf": r2(v0 * math.exp(drift) + m * fv, 0),
+                    "chance_with_plan": r2(1 - phi(zp), 4) if zp is not None else 0.99, "plan_covers_need": bool(m >= out["monthly_needed_huf"]),
+                    "plan_note": "With the monthly amount: each payment is taken to grow at the assumed return without swings, so the chance shown is a little too confident."})
+    return out
 
 
 # ---------------------------------------------------------------- item 17: what the doomsday protocol means for these holdings
@@ -1451,7 +1461,7 @@ def main():
            "cards": cards, "screen": rows, "shorts": shorts, "rebalance": plan, "plans": plans, "holds": hp, "keeps": keeps,
            "portfolio_range": {"months": 12, "low": r2(math.exp((pmu - pvol * pvol / 2) - Z80 * pvol) - 1, 4), "mid": r2(math.exp(pmu - pvol * pvol / 2) - 1, 4),
                                "high": r2(math.exp((pmu - pvol * pvol / 2) + Z80 * pvol) - 1, 4), "mu": r2(pmu, 4), "vol": pvol} if pvol else None,
-           "goal": goal(E.rj("state/plan.json", {}), nav, E.rj("state/fx.json", {}), pvol, pmu, now),
+           "goal": goal(E.rj("state/plan.json", {}), nav, E.rj("state/fx.json", {}), pvol, pmu, now, E.rj("state/contribution.json", {})),
            "doomsday": doom_steps(pos, quant, lim, nav, uni, lab_out),
            "spreading": lab_out.get("spreading"),
            "answers": {"read": len(answers), "last": answers[-1]["at"] if answers else None},
