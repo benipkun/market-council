@@ -709,19 +709,12 @@ def morning(prev, cards, plans, snap, quant, holds_, smart, answers, now):
     out = {"date": today.isoformat(), "questions": qs, "waiting": len(waiting), "summary": lines, "sent_date": (prev or {}).get("sent_date"), "sent_note": (prev or {}).get("sent_note")}
     hour = int(now[11:13])
     if out["sent_date"] != today.isoformat() and today.weekday() < 5 and hour >= 5 and not QUICK:
-        topic = re.sub(r"^(https?://)?ntfy\.sh/", "", (os.environ.get("NTFY_OUT") or "").strip())
         head = ("%d question%s need%s your yes or no. " % (len(waiting), "" if len(waiting) == 1 else "s", "s" if len(waiting) == 1 else "")) if waiting else "Nothing needs a decision. "
-        body = {"topic": topic, "title": "Morning check", "message": head + " ".join(lines), "click": APP + "#today", "tags": ["sunrise"]}
-        if not topic or E.OFFLINE:
-            out["sent_note"] = "not sent: no phone channel in this run"
-        else:
-            try:
-                req = urllib.request.Request("https://ntfy.sh/", data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=20) as r:
-                    ok = r.status == 200
-                out["sent_date"], out["sent_note"] = (today.isoformat(), "sent " + now) if ok else (out["sent_date"], "not delivered")
-            except Exception as e:
-                out["sent_note"] = "not delivered: " + str(e)[:80]
+        body = {"message": head + " ".join(lines)}
+        note = queue_phone("Morning check", body["message"], "sunrise", now)
+        if note.startswith("sent"):
+            out["sent_date"] = today.isoformat()
+        out["sent_note"] = note
         out["message"] = body["message"]
     return out
 
@@ -1259,17 +1252,26 @@ def bar_check(paper_picks):
                     "before 5 October. Equal weight per pick; a few weeks of data, so this is an indication, not proof."}
 
 
-def push(title, message, tag, now):
-    topic = re.sub(r"^(https?://)?ntfy\.sh/", "", (os.environ.get("NTFY_OUT") or "").strip())
-    if not topic or E.OFFLINE:
+def queue_phone(title, message, tag, now, click="#today"):
+    """Phone messages leave through the private records: a file in outbox/queue/ is sent by the
+    "Send phone messages" job there, which holds the channel name. No amounts, no holdings."""
+    if E.OFFLINE:
         return "not sent: no phone channel in this run"
     try:
-        body = {"topic": topic, "title": title, "message": message, "click": APP + "#today", "tags": [tag]}
-        req = urllib.request.Request("https://ntfy.sh/", data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return ("sent " + now) if r.status == 200 else "not delivered"
+        d = os.path.join(E.ROOT, "outbox", "queue")
+        os.makedirs(d, exist_ok=True)
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:30] or "note"
+        with open(os.path.join(d, "%s-%s.json" % (stamp, slug)), "w", encoding="utf-8") as f:
+            json.dump({"title": title, "message": message[:900], "click": APP + click, "tags": [tag]}, f, indent=1)
+            f.write("\n")
+        return "sent " + now
     except Exception as e:
         return "not delivered: " + str(e)[:80]
+
+
+def push(title, message, tag, now):
+    return queue_phone(title, message, tag, now)
 
 
 def sgn(x, n=1):

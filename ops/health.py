@@ -198,14 +198,17 @@ def gh_runs(file):
 
 
 def push(m):
-    topic = re.sub(r"^(https?://)?ntfy\.sh/", "", (os.environ.get("NTFY_OUT") or "").strip())
-    if not topic:
-        return "no channel set"
-    body = {"topic": topic, "title": m["title"], "message": m["message"][:900], "click": APP, "tags": [m["tag"]]}
+    """Phone messages leave through the private records: a file in outbox/queue/ is sent by the
+    "Send phone messages" job there, which holds the channel name."""
     try:
-        req = urllib.request.Request("https://ntfy.sh/", data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return "sent" if r.status == 200 else "HTTP %s" % r.status
+        d = os.path.join(ROOT, "outbox", "queue")
+        os.makedirs(d, exist_ok=True)
+        stamp = datetime.datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        n = len([x for x in os.listdir(d) if x.startswith(stamp)])
+        with open(os.path.join(d, "%s-health%s.json" % (stamp, "-%d" % n if n else "")), "w", encoding="utf-8") as f:
+            json.dump({"title": m["title"], "message": m["message"][:900], "click": APP, "tags": [m["tag"]]}, f, indent=1)
+            f.write(NL)
+        return "sent"
     except Exception as e:
         return "not sent: %s" % type(e).__name__
 

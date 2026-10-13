@@ -26,12 +26,16 @@ jobs:
       - name: Tell the phone if this job failed
         if: failure()
         env:
-          NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          MC_TOKEN: ${{ secrets.MC_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
           prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow tests.yml --status completed --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || true)
           if [ "$prev" = "failure" ]; then echo "Already reported after the previous failed run."; exit 0; fi
-          T=$(printf %s "$NTFY_OUT" | tr -d '[:space:]' | sed -E 's#^(https?://)?ntfy\.sh/##')
-          jq -n --arg t "$T" --arg m "A change to the code failed its tests at $(date -u +%H:%M) UTC. The engine will not run until they pass. Open SYSTEM in the app." '{topic:$t,title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
-          code=$(curl -sS -m 20 --retry 3 --retry-delay 5 -o /tmp/resp.json -w "%{http_code}" -H "Content-Type: application/json" -d @/tmp/alert.json https://ntfy.sh/ || echo failed)
-          if [ "$code" = "200" ]; then echo "alert sent: HTTP 200"; else echo "alert NOT sent: HTTP $code $(jq -r '.error // empty' /tmp/resp.json 2>/dev/null)"; fi
+          # The message leaves through the private records: a file in outbox/queue/ there is sent to the phone by its "Send phone messages" job.
+          jq -n --arg m "A change to the code failed its tests at $(date -u +%H:%M) UTC. The engine will not run until they pass. Open SYSTEM in the app." '{title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
+          rm -rf /tmp/rec
+          if git clone -q --depth 1 "https://x-access-token:${MC_TOKEN}@github.com/benipkun/market-council-state.git" /tmp/rec >/dev/null 2>&1; then
+            cd /tmp/rec && mkdir -p outbox/queue && cp /tmp/alert.json "outbox/queue/$(date -u +%Y%m%dT%H%M%SZ)-job-failed.json"
+            git config user.name "Market Council Engine" && git config user.email "engine@market-council.local"
+            if git add outbox/queue >/dev/null 2>&1 && git commit -q -m "Alert: a job failed" >/dev/null 2>&1 && git push -q origin HEAD:main >/dev/null 2>&1; then echo "alert queued for the phone"; else echo "alert NOT queued: the private records refused the message"; fi
+          else echo "alert NOT queued: the private records could not be reached"; fi
