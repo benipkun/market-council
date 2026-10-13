@@ -189,7 +189,10 @@ h+=M.blk("TIMED PLANS",M.tag(d.as_of,14),pl+'<details class="p3d"><summary>Add a
 var g=d.goal,pr=d.portfolio_range;
 if(pr)h+=M.blk("TWELVE MONTHS AHEAD",M.tag(d.as_of,14),M.kv("Middle outcome",M.sp(pr.mid,0))+M.kv("Four times out of five between",M.sp(pr.low,0)+" and "+M.sp(pr.high,0))+
 (g?'<div class="lbl" style="margin-top:10px">Your goal</div>'+M.kv("Goal",vis()?esc(Math.round(g.amount_huf).toLocaleString("hu-HU"))+" Ft by "+esc(g.by):"set, by "+esc(g.by))+M.kv("Chance of reaching it without adding money",pc(g.chance_without_adding))+
-M.kv("Needed each month to reach it at the assumed return",vis()?esc(Math.round(g.monthly_needed_huf).toLocaleString("hu-HU"))+" Ft":'<span class="fl">hidden</span>'):""),
+M.kv("Needed each month to reach it at the assumed return",vis()?esc(Math.round(g.monthly_needed_huf).toLocaleString("hu-HU"))+" Ft":'<span class="fl">hidden</span>')+
+(g.monthly_planned_huf?M.kv("You plan to add each month",vis()?esc(Math.round(g.monthly_planned_huf).toLocaleString("hu-HU"))+" Ft (about $"+Math.round(g.monthly_planned_usd)+")":'<span class="fl">hidden</span>')+
+M.kv("Chance of reaching it with that plan",pc(g.chance_with_plan))+M.kv("Middle outcome with that plan",vis()?esc(Math.round(g.with_plan_middle_huf).toLocaleString("hu-HU"))+" Ft":'<span class="fl">hidden</span>')+
+'<div class="src">'+(g.plan_covers_need?"The planned amount covers what is needed at the assumed return.":"The planned amount is less than what is needed at the assumed return.")+" "+esc(g.plan_note||"")+'</div>':""):""),
 "Range from the portfolio's volatility over the last year ("+pc(pr.vol)+") around the engine's return estimate ("+pc(pr.mu,1)+" a year). Both are estimates; the range is wide because one share dominates. "+(g?esc(g.method):""));
 return h;};
 
