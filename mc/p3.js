@@ -102,8 +102,11 @@ if(e)h+='<div style="margin-top:8px">'+M.kv("Volatility a year (estimate)",pc(e.
 return h+'<div class="src">'+esc(c.method||"")+" Estimate, not advice. You place every order yourself.</div>";}
 function cardState(c){var s=said(c.id,c.status==="approved"?"yes":(c.status==="declined"?"no":null),c.answered_at);
 if(c.greyed&&c.status==="open")return '<div class="q"><b style="color:var(--tx)">Not offered:</b> '+esc(c.grey_reason||"fees eat the gain")+'</div>';
-if(c.status==="open"&&!s&&c.kind==="idea"){var ok=(c.sizes||[]).filter(function(r){return r.pays;});
-return '<div class="p3b" style="flex-wrap:wrap">'+ok.map(function(r){return '<button class="y" data-p3="ans" data-k="decision" data-id="'+esc(c.id)+'" data-v="yes" data-size="'+r.usd+'">Yes, '+d0(r.usd)+'</button>';}).join("")+'<button data-p3="ans" data-k="decision" data-id="'+esc(c.id)+'" data-v="no">No</button></div>';}
+if(c.status==="open"&&!s&&c.kind==="idea"){
+/* the amount is yours to type; nothing is preset. The smallest amount that still pays after fees is shown as a guide. */
+return '<div class="p3b" style="flex-wrap:wrap;align-items:center"><input type="text" inputmode="decimal" autocomplete="off" data-hold="1" data-p3amt="'+esc(c.id)+'" value="'+esc((AMT||{})[c.id]||"")+'" placeholder="Your amount in $" aria-label="Your amount in dollars" style="flex:1 1 130px;min-width:120px;padding:10px;border-radius:8px;border:1px solid var(--ln,#2a3550);background:transparent;color:var(--tx);font:inherit">'+
+'<button class="y" data-p3="ans" data-k="decision" data-id="'+esc(c.id)+'" data-v="yes" data-custom="1">Yes, this amount</button><button data-p3="ans" data-k="decision" data-id="'+esc(c.id)+'" data-v="no">No</button></div>'+
+'<div class="src">'+(c.min_size?"Smallest amount that still pays after fees: about "+d0(c.min_size)+".":"At the sizes tested this idea does not pay after fees.")+(c.profile_size&&vis()?" Your risk profile allows up to "+d0(c.profile_size)+" for this stop.":"")+' You type the amount; nothing is preset.</div>';}
 if(c.status==="open"&&!s)return '<div class="p3b"><button class="y" data-p3="ans" data-k="decision" data-id="'+esc(c.id)+'" data-v="yes">'+(c.kind==="test"?"Yes":"Approve")+'</button><button data-p3="ans" data-k="decision" data-id="'+esc(c.id)+'" data-v="no">'+(c.kind==="test"?"No":"Decline")+'</button></div>';
 if(c.kind==="test"&&(c.status==="open"||c.status==="approved"||c.status==="declined"))return '<div class="q me">You said <b>'+(s.a==="yes"?"YES":"NO")+'</b> '+MID+" "+esc(MC.when(s.at))+(s.rec?". The answer came back to the desk: the loop works.":". Waiting for the engine to record it.")+'</div>';
 if(c.status==="open"||c.status==="approved"||c.status==="declined")return '<div class="q me">You said <b>'+(s.a==="yes"?"YES":"NO")+((c.approved_size||(local()[c.id]||{}).size)&&s.a==="yes"?" at "+d0(c.approved_size||(local()[c.id]||{}).size):"")+'</b> '+MID+" "+esc(MC.when(s.at))+(s.rec?(s.a==="yes"?". Place the orders yourself in your broker, then log each one.":". Not raised again for 14 days."):". Waiting for the engine to record it.")+'</div>';
@@ -265,9 +268,15 @@ M.done[15]=function(){var d=D();return !!(d&&d.plans);};M.done[16]=function(){va
 M.done[17]=function(){var d=D();return !!(d&&d.doomsday&&d.doomsday.backtest&&d.doomsday.backtest.status==="ok");};
 M.done[18]=function(){var d=D();return !!(d&&d.morning);};M.done[19]=function(){var b=M.X.pbook;return !!(b&&b.start);};
 document.addEventListener("change",function(e){var s=e.target&&e.target.dataset?e.target.dataset.p3sel:null;if(!s)return;ui[s]=e.target.value;M.render();});
+/* what you type as your amount on a card is remembered, so a refresh of the screen does not wipe it */
+var AMT={};
+document.addEventListener("input",function(e){var k=e.target&&e.target.dataset?e.target.dataset.p3amt:null;if(k)AMT[k]=e.target.value;});
 document.addEventListener("click",function(e){var b=e.target.closest("[data-p3]");if(!b)return;var a=b.dataset.p3,id=b.dataset.id;
 if(a==="ans"){var v=b.dataset.v,k=b.dataset.k,box=$("p3-stat2")&&b.closest("#ppanel")?"p3-stat2":"p3-stat";b.disabled=true;
-var body={kind:k,id:id,answer:v},sz=num(b.dataset.size);if(sz)body.size=sz;
+var body={kind:k,id:id,answer:v},sz=num(b.dataset.size);
+if(b.dataset.custom){var inp=document.querySelector('[data-p3amt="'+id+'"]');sz=inp?num(String(inp.value).replace(/\s/g,"").replace(",",".")):null;
+if(!(sz>=10&&sz<=100000)){b.disabled=false;MC.toast("Type your amount in dollars first (at least $10).",true);if(inp)inp.focus();return;}}
+if(sz)body.size=sz;
 post(body,v+" to "+id,box).then(function(ok){if(!ok){b.disabled=false;return;}setLocal(id,v,sz);M.render();if(k==="morning"&&v==="yes"&&id.indexOf("books:")===0)MC.prefill({act:"buy"});});}
 else if(a==="log"){M.closePos();MC.prefill({t:b.dataset.t,act:b.dataset.side,amt:b.dataset.usd});}
 else if(a==="pstop"){b.disabled=true;post({kind:"plan_stop",id:id},"stop plan "+id,"tp-stat");}
