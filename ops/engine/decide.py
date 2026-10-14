@@ -959,6 +959,12 @@ def portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct):
             alt = dict(held)
             alt["SPY"], alt[t] = alt.get("SPY", 0.0) + held[t] - cap, cap
             out["keeps"][t] = {"share": r2(held[t], 4), "cap": r2(cap, 4), "bad_as_held": out["bad_year"], "bad_at_cap": r2(bad_year(alt, r0, mus), 4)}
+    out["sells"] = {}
+    for t in held:
+        if t in r0 and t not in (keeps or {}):
+            alt = dict(held)
+            alt.pop(t)
+            out["sells"][t] = r2(bad_year(alt, r0, mus), 4)       # the bad year if this holding were sold and the money kept as cash
     for x in ideas:
         t = x["ticker"]
         if not series.get(t):
@@ -1390,7 +1396,9 @@ def main():
             x["cost"] = cost_lines(x["ticker"], liq, (x.get("legs") or [{}])[0].get("limit"), list(SIZES))
     wanted += ideas
     # cross-check the price behind every card against a second source; a card whose price fails the check is held back
-    has_px = [x["ticker"] for x in wanted if x.get("ticker") and x["ticker"] != "portfolio" and E.read_cache(x["ticker"])]
+    # the holdings are checked too, so the value of the books rests on prices two sources agree on
+    has_px = [x["ticker"] for x in wanted if x.get("ticker") and x["ticker"] != "portfolio" and E.read_cache(x["ticker"])] + \
+        [p["t"] for p in pos if E.read_cache(p["t"])]
     pchk = price_checks(has_px, prev.get("price_check"), now)
     for x in wanted:
         r = pchk.get(x.get("ticker"))
@@ -1469,7 +1477,7 @@ def main():
            "answers": {"read": len(answers), "last": answers[-1]["at"] if answers else None},
            "failed": failed if not QUICK else (prev.get("failed") or []),
            "inputs": {"quant": quant.get("as_of"), "books": snap.get("as_of"), "cards": ix.get("as_of"), "lab": lab_out.get("as_of")},
-           "disclaimer": "Worked out from written rules and estimates. Not advice. Nothing here places an order; you place every order yourself."}
+           "disclaimer": "Output of your own system's rules and estimates. You decide and place every order."}
     days, fn = funnel(prev.get("funnel_days"), digest, E.rj("digests/history.json", {}), E.rj("ops/engine/funnel_seed.json", []), strat_out, lab_out, scr, cards, now)
     out["desk"] = {"near": near_misses((strat_out.get("edge") or {}).get("rows") or [], scr, digest.get("technicals") or {}), "funnel": fn,
                    "bar_check": bar_check(E.rj("state/paper.json", {})), "records": records, "sizes": list(SIZES), "also": also, "card_limit": DESK_SCORE_MAX,
@@ -1505,6 +1513,14 @@ def main():
         partners.run(now)
     except Exception as e:
         print("partners: the statement was not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # the action list: the cards, the Forecaster, the fees and the cash turned into numbered BUY / SELL / SWAP / HOLD lines
+    try:
+        import actions
+        spy = E.read_cache("SPY")
+        acts = actions.run(now, out, spy_price=float(spy[-1][1]) if spy else None)
+        print("actions:", "; ".join("%s %s" % (a["type"], a.get("ticker") or "") for a in acts["actions"]))
+    except Exception as e:
+        print("actions: the action list was not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     E.wj("state/paper_book.json", paper(E.rj("state/paper_book.json", None), cards, pos, snap, now))
     print("decide ok:", len([c for c in cards if c["status"] == "open"]), "open cards,", len(plans), "plans,", out["morning"]["waiting"], "questions waiting;", out["morning"].get("sent_note"))
 

@@ -336,7 +336,7 @@ def main():
         if facts:
             body += "<h3>Latest facts</h3>" + "".join('<div class="ev"><div class="d">{}</div><div>{}<div class="note">{}</div></div></div>'.format(
                 day(x.get("date")), e(x.get("text")), e(x.get("source"))) for x in facts)
-        body += '<p class="note">Facts collected for your idea, not a recommendation.</p>'
+        body += '<p class="note">Facts collected for your idea.</p>'
         sections.append(("idea", e(th.get("title") or "Idea tracker"), body, ""))
 
     # 5. Practice portfolio
@@ -547,8 +547,8 @@ nav a{text-transform:uppercase;letter-spacing:.06em;font-size:11px;border:1px so
 <main>
 @SECTIONS@
 <footer>
-<p>Rebuilt automatically each weekday morning, midday and evening. Your balances are not on this page because it is public;
-they are in the app's Portfolio tab. Facts and mechanical rules, not personal financial advice.</p>
+<p>Rebuilt automatically each weekday morning, midday and evening. Your balances and the numbered action list are in the app
+(Today and Portfolio tabs).</p>
 </footer>
 </main>
 </body>

@@ -13,7 +13,7 @@ return M.blk("COUNCILLOR CHALLENGE",c.stale?'<span class="stg stale">STALE INPUT
 (c.against||[]).map(function(s){return '<div class="q">Against: '+esc(s)+'</div>';}).join("")+
 M.kv("Size the risk profile allows",c.size_usd?esc(MC.money(c.size_usd)):"none")+
 '<div class="src">'+esc(c.size_basis||"")+(c.missing&&c.missing.length?" Missing: "+esc(c.missing.join("; "))+".":"")+'</div>',
-"Data: the digest, the engine's numbers and the paper record at the time of the verdict, "+M.upd(c.at)+". Worked out from written rules; an estimate, not advice.");};
+"Data: the digest, the engine's numbers and the paper record at the time of the verdict, "+M.upd(c.at)+". Worked out from written rules; an estimate.");};
 M.done[1]=function(){return "part";};
 M.reload();
 })();

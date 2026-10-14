@@ -340,8 +340,7 @@ footer{margin-top:26px;font-size:11.5px;color:var(--dim);line-height:1.55}
 <div class="card" id="earn"></div>
 </div>
 <footer>
-<b>Not personalised financial advice.</b> Sizes come from a mechanical rule against your recorded cash;
-reference levels are facts, not entry or exit points. Decisions and execution are yours.
+Market Council never places an order: you place every order yourself.
 </footer>
 </section>
 <section class="view" id="v-brief" hidden>
@@ -734,7 +733,7 @@ else if(ps)verdict='<div class="verdict none"><span class="amt">No size suggeste
 var det=[];
 if(p.brief&&p.why)det.push("<p>"+esc(p.brief)+"</p>");
 if(ps&&ps.basis)det.push("<p><b>Why this size.</b> "+esc(ps.basis)+(ps.concentration_note?" "+esc(ps.concentration_note):"")+
-(ps.caveat?" "+esc(ps.caveat):"")+"</p>");
+"</p>");
 if(p.bull_case||p.bear_case)det.push('<div class="cases"><div class="case bull"><b>Bull case</b>'+esc(p.bull_case||DASH)+
 '</div><div class="case bear"><b>Bear case</b>'+esc(p.bear_case||DASH)+'</div></div>');
 var a=p.advisor_questions;
@@ -1277,7 +1276,7 @@ tile("Your check-in",esc(dayLabel(dCheck)),th.check_in?shortDate(th.check_in):""
 (films?'<div class="card gap">'+films+'</div>':"")+
 '<div class="sh"><h2>Red flags</h2><span class="note">new shares, debt, lawsuits</span></div><div class="card">'+fl+'</div>'+
 (lg?'<details class="more"><summary>Latest facts ('+logs.length+')</summary><div class="card">'+lg+'</div></details>':"")+
-'<p class="note">Facts collected for your idea, not a recommendation. News is checked weekly, and daily from 1 December. '+
+'<p class="note">Facts collected for your idea. News is checked weekly, and daily from 1 December. '+
 'Your phone gets a notification only when something material changes.</p>'+
 '<div class="pact"><button class="btn sm" data-altk="'+esc(th.ticker)+'">Set a price alert</button>'+
 '<button class="btn sm" data-log="1" data-t="'+esc(th.ticker)+'" data-act="buy">Log a buy</button></div>';

@@ -14,6 +14,7 @@ os.environ.setdefault("MC_QUICK", "1")
 
 import numpy as np  # noqa: E402
 
+import actions as A  # noqa: E402
 import decide as D  # noqa: E402
 import forecast as F  # noqa: E402
 import health as H  # noqa: E402
@@ -379,6 +380,58 @@ class TrackRecord(unittest.TestCase):
         self.assertEqual(out["trend"]["state"], "dropped")
         good = [row(0.10, 0.12)] * 30
         self.assertEqual(T.judge_checks(good, {}, "2027-06-01")[1], ["trend"])  # and proven the other way round
+
+
+class Actions(unittest.TestCase):
+    # a made-up book: a kept holding, a weak holding and one open idea paid for by selling the weak one
+    def ctx(self, **kw):
+        snap = {"positions": [{"ticker": "KEEP", "qty": 10, "last_price": 70.0, "market_value": 700.0, "cost_basis": 750.0},
+                              {"ticker": "OLD", "qty": 10, "last_price": 20.0, "market_value": 200.0, "cost_basis": 120.0}]}
+        card = {"kind": "idea", "status": "open", "ticker": "NEW", "id": "I1", "entry": 100.0, "cost": {"limit": 100.0}, "stop": 92.0, "take_profit": 116.0,
+                "profile_size": 150.0, "funding": {"kind": "paired_sale", "sell": "OLD", "why": "OLD passes 0 of 7 checks."},
+                "checks": [{"id": "quality", "pass": True}, {"id": "trend", "pass": True}, {"id": "value", "pass": False}]}
+        fct = {"NEW": {"h": {"by": {"due": "2026-11-20", "f": {"tp_first": {"p": 0.5, "cases": 900}, "stop_first": {"p": 0.3}}}, "1m": {"f": {"beat": {"p": 0.55}}}}},
+               "OLD": {"h": {"1m": {"f": {"beat": {"p": 0.40}}}}}}
+        c = {"cards": [card], "fct": fct, "track": {"count": 32, "checks": {"quality": {"state": "unproven"}, "trend": {"state": "proven"}}},
+             "hold": A.holding_map(snap), "nav": 1200.0, "cash": 300.0, "limits": {"stock_cap": 0.3, "min_cash": 0.03},
+             "keeps": {"KEEP": {"target": 80.0, "by": "2027-10-05", "chance_touch": 0.79}}, "holds": {}, "pf": {}, "fx": 330.0, "stale": [],
+             "free_cash": 264.0, "monthly_huf": 120000.0, "monthly_usd": 363.64, "spy": 50.0}
+        c.update(kw)
+        return c
+
+    def test_swap_with_its_numbers(self):
+        acts, _ = A.today(self.ctx())
+        a = acts[0]
+        self.assertEqual((a["type"], a["sell"]["ticker"], a["buy"]["ticker"]), ("SWAP", "OLD", "NEW"))
+        self.assertAlmostEqual(a["sell"]["proceeds"], 198.88, places=2)         # 10 x $20 less the $1.12 minimum fee
+        self.assertAlmostEqual(a["sell"]["tax"], 11.83, places=2)               # 15% of the $78.88 gain over the $120 cost
+        self.assertEqual(a["buy"]["shares"], 1.0)                               # the idea is capped at $150, so one $100 share
+        self.assertAlmostEqual(a["expected_usd"], 3.36, places=2)               # 100 x (0.5 x 16% - 0.3 x 8%) - 2 x $1.12
+        self.assertAlmostEqual(a["net_cash"], 97.76, places=2)                  # 198.88 - 100 - 1.12
+        self.assertEqual(a["evidence"]["label"], "unproven")                    # one of its two passed checks has no record yet
+        self.assertEqual([x["type"] for x in acts[1:]], ["HOLD"])               # the kept holding comes last, as a hold
+
+    def test_a_kept_holding_is_never_offered_for_sale(self):
+        a = A.should_sell("keep", self.ctx())[0]
+        self.assertEqual((a["type"], a.get("decision")), ("HOLD", True))
+        self.assertIn("your decision", a["line"])
+
+    def test_new_money_goes_to_the_idea_then_the_index_fund(self):
+        acts = A.plan_amount(100000 / 330.0, self.ctx())                       # $303.03
+        self.assertEqual([(x["type"], x.get("ticker")) for x in acts], [("BUY", "NEW"), ("BUY", "SPY"), ("HOLD", None)])
+        self.assertEqual(acts[1]["shares"], 4.0)                                # $200.79 after the fee buys four $50 shares
+
+    def test_stale_data_holds_every_buy_back(self):
+        acts, _ = A.today(self.ctx(stale=["desk"]))
+        self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))
+        self.assertIn("stale", acts[0]["line"])
+
+    def test_questions_are_read_with_their_currency(self):
+        c = self.ctx()
+        self.assertAlmostEqual(A.parse("What should I do with 100,000 HUF now?", c)[1], 303.03, places=2)
+        self.assertAlmostEqual(A.parse("100000 Ft", c)[1], 303.03, places=2)
+        self.assertEqual(A.parse("What should I do with $500?", c), ("amount", 500.0))
+        self.assertEqual(A.parse("Should I sell uber?", c), ("sell", "UBER"))
 
 
 if __name__ == "__main__":

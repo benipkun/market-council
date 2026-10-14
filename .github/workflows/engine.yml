@@ -101,10 +101,10 @@ jobs:
           say() { echo "$1" >&3; }
           git config user.name "Market Council Engine"
           git config user.email "engine@market-council.local"
-          git add -A state research brief outbox
+          git add -A state research brief outbox ops/engine/actions.py
           if git diff --cached --quiet; then say "Nothing changed."; else
             git commit -q -m "Engine: results $(date -u +%Y-%m-%dT%H:%MZ)"
-            # Only state/, research/, brief/ and phone messages (outbox/) are saved. Drop anything else the run touched, or git refuses to replay the commit on newer records.
+            # Only state/, research/, brief/, phone messages (outbox/) and the action-list script the inbox routine runs are saved. Drop anything else the run touched, or git refuses to replay the commit on newer records.
             git reset -q --hard HEAD
             # If the records moved meanwhile, replay this commit on top of them; where both changed a results file, the fresh results win.
             pushed=0

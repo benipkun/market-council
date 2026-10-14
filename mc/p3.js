@@ -94,12 +94,12 @@ if((c.sizes||[]).length)h+='<div class="ox"><table class="mt p3w"><tr><th>Amount
 h+='<div class="q">'+fundText(c.funding,c.sizes)+'</div>'+(c.record?'<div class="q"><b style="color:var(--tx)">Track record of this source:</b> '+esc(mns(c.record))+'</div>':"");
 h+=(M.cardExtra?M.cardExtra(c):"");
 h+='<div class="lbl" style="margin-top:10px">Why</div>'+list(c.why)+((c.against||[]).length?'<div class="lbl" style="margin-top:10px">Against it</div>'+list(c.against):"");
-return h+'<div class="src">'+esc(c.method||"")+" Estimate, not advice. You place every order yourself.</div>";}
+return h+'<div class="src">'+esc(c.method||"")+" An estimate from your own rules.</div>";}
 function mns(s){return String(s==null?"":s).replace(/(^|[\s(])-(?=\d)/g,"$1"+MINUS);}
 function cardBody(c){if(c.legs)return ideaBody(c);var e=c.effect,h=(c.orders||[]).map(function(o){return order(o,c);}).join("");
 h+='<div class="lbl" style="margin-top:10px">Why</div>'+list(c.why)+'<div class="lbl" style="margin-top:10px">Against it</div>'+list(c.against);
 if(e)h+='<div style="margin-top:8px">'+M.kv("Volatility a year (estimate)",pc(e.vol_before)+" now, "+pc(e.vol_after_part)+" after this part, "+pc(e.vol_after_all)+" after all parts")+M.kv("Largest position",pc(e.largest_before)+" now, "+pc(e.largest_after_part)+" after this part, "+pc(e.largest_after_all)+" after all parts")+'</div>';
-return h+'<div class="src">'+esc(c.method||"")+" Estimate, not advice. You place every order yourself.</div>";}
+return h+'<div class="src">'+esc(c.method||"")+" An estimate from your own rules.</div>";}
 function cardState(c){var s=said(c.id,c.status==="approved"?"yes":(c.status==="declined"?"no":null),c.answered_at);
 if(c.greyed&&c.status==="open")return '<div class="q"><b style="color:var(--tx)">Not offered:</b> '+esc(c.grey_reason||"fees eat the gain")+'</div>';
 if(c.status==="open"&&!s&&c.kind==="idea"){
