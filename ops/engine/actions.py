@@ -200,10 +200,12 @@ def qualifies(x):
 def reason(x):
     # the first reason an idea is not a BUY
     if x["held_back"]:
-        return x["held_back"][0]
-    if x["edge"] is not None and x["edge"] <= x["index_edge"]:
-        return x["vs_index"]
-    return (x["disagree"] or ["its expected result after fees does not beat the index fund"])[0]
+        r = x["held_back"][0]
+    elif x["edge"] is not None and x["edge"] <= x["index_edge"]:
+        r = x["vs_index"]
+    else:
+        r = (x["disagree"] or ["its expected result after fees does not beat the index fund"])[0]
+    return str(r).rstrip(". ")
 
 
 def buy_line(x, usd, ctx, pays):
