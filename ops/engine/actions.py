@@ -380,6 +380,7 @@ def plan_amount(usd, ctx, label=None):
         if a and a["expected_usd"] is not None and a["expected_usd"] > (a.get("index_usd") or 0):
             acts.append(a)
             left -= a["usd"] + a["fees"]
+    whole = not acts
     if left >= MIN_ORDER and ctx.get("spy"):
         sh = shares_for(left - fee(left), float(ctx["spy"]))
         cost = round(sh * float(ctx["spy"]), 2)
@@ -388,7 +389,14 @@ def plan_amount(usd, ctx, label=None):
                          "fees": fee(cost), "pays_with": "the rest of the new money", "flags": ["index fund: no edge claimed"], "evidence": {"label": "benchmark", "text": "the S&P 500 index fund every idea is measured against"},
                          "expected_usd": r2(cost * ctx.get("index_mu", 0.0861) - 2 * fee(cost)), "expected_note": "over a year at the engine's index assumption (%.1f%% a year)" % (100 * ctx.get("index_mu", 0.0861)),
                          "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], "SPY", cost, extra_cash=usd)},
-                         "line": "BUY %s SPY (S&P 500 index fund) at limit $%.2f = $%s%s, fees $%.2f: the rest of the money, where no idea beats the index fund.%s" % (fmt_sh(sh), float(ctx["spy"]), money(cost), (" (%s HUF)" % "{:,}".format(round(cost * ctx["fx"]))) if ctx["fx"] else "", fee(cost), "" if float(sh).is_integer() else " " + FRACTION)})
+                         "line": "BUY %s SPY (S&P 500 index fund) at limit $%.2f = $%s%s, fees $%.2f: %s.%s" % (fmt_sh(sh), float(ctx["spy"]), money(cost), (" (%s HUF)" % "{:,}".format(round(cost * ctx["fx"]))) if ctx["fx"] else "", fee(cost),
+                                                                                                                  "the whole amount, because no idea beats the index fund" if whole else "the rest of the money, where no further idea beats the index fund",
+                                                                                                                  "" if float(sh).is_integer() else " " + FRACTION)})
+            if whole:
+                best = sorted([x for x in cands if x["edge"] is not None and not x["held_back"]], key=lambda x: -(x["edge"] - x["index_edge"]))[:2]
+                if best:
+                    acts[-1]["disagree"] = []
+                    acts[-1]["closest"] = ["%s: %s" % (x["t"], x["vs_index"]) for x in best]
             left -= cost + fee(cost)
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx) + " Keep the money as cash.", ctx))
@@ -514,7 +522,7 @@ def answer(q, ctx):
 
 
 def text(ans):
-    lines = [ans["head"] + ":"]
+    lines = [ans["head"] + ("" if ans["head"].endswith("?") else ":")]
     for a in ans["actions"]:
         lines.append("%d. %s" % (a["n"], a["line"]))
         extra = []
@@ -538,8 +546,11 @@ def text(ans):
             extra.append("disagreement: " + "; ".join(a["disagree"]))
         if a.get("effect"):
             extra.append(a["effect"])
+        if a.get("closest"):
+            extra.append("Closest ideas: " + "; ".join(a["closest"]))
         if extra:
-            lines.append("   " + ". ".join(extra) + ".")
+            extra = [x.strip().rstrip(".") for x in extra if x and x.strip()]
+            lines.append("   " + ". ".join(x[0].upper() + x[1:] for x in extra) + ".")
     lines.append(FOOT)
     return "\n".join(lines)
 

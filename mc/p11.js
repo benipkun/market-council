@@ -22,7 +22,7 @@ if(p.share!=null&&p.cap!=null)pp.push(pct(p.share)+" of the portfolio against yo
 if(p.bad_year_if_sold!=null)pp.push("bad year if sold "+(100*p.bad_year_if_sold).toFixed(1)+"%");if(pp.length&&!a.decision)s.push("Portfolio: "+pp.join(" "+DOT+" "));
 if(e.text)s.push("Evidence: "+esc(e.text));
 (a.disagree||[]).forEach(function(d){s.push('<span style="color:var(--wn)">The parts disagree: '+esc(d)+'</span>');});
-if(a.effect)s.push(esc(a.effect));if(a.valid_until)s.push("Card valid until "+esc(a.valid_until)+". "+esc(a.exit_rule||""));
+if(a.effect)s.push(esc(a.effect));(a.closest||[]).forEach(function(c){s.push("Closest idea: "+esc(c));});if(a.valid_until)s.push("Card valid until "+esc(a.valid_until)+". "+esc(a.exit_rule||""));
 var flags=(a.flags||[]).map(function(x){return '<span class="stg '+(x==="unproven"?"stale":"paper")+'" style="margin-left:6px">'+esc(x.toUpperCase())+'</span>';}).join("");
 return '<div class="q" style="margin-top:8px"><span class="stg '+(TAG[a.type]||"paper")+'">'+(a.n||"")+". "+a.type+'</span>'+flags+'<div style="font-size:13px;color:var(--tx);font-weight:700;margin:4px 0;white-space:normal">'+esc(a.line||"")+'</div>'+
 s.map(function(x){return '<div class="src" style="white-space:normal">'+x+'</div>';}).join("")+'</div>';}
