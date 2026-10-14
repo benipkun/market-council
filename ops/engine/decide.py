@@ -1441,8 +1441,9 @@ def main():
         x["verdict"] = v
         x.setdefault("greyed", False)
         x.setdefault("grey_reason", None)
-        if not v["buy"] and not x.get("greyed"):
-            x["greyed"], x["grey_reason"] = True, actions.NOT_A_BUY + v["why"] + "."
+        if not v["buy"]:
+            if not x.get("greyed"):
+                x["greyed"], x["grey_reason"] = True, actions.NOT_A_BUY + v["why"] + "."
             ttl = str(x.get("title") or "")
             m = re.match(r"^Buy (\S+): it (.*)$", ttl)
             if m:
