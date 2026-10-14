@@ -375,8 +375,13 @@ def verdicts_from(ctx):
     return out
 
 
+def as_open(cards):
+    # the desk calls this with fresh ideas, which have no status yet: judge them as open cards
+    return [dict(c, status=c.get("status") or "open") for c in cards]
+
+
 def verdicts(cards, keeps=None, limits=None, fee_pct=None, fee_min=None):
-    return verdicts_from(build_ctx({"cards": cards, "keeps": keeps or {}, "profile": {"limits": limits or {}},
+    return verdicts_from(build_ctx({"cards": as_open(cards), "keeps": keeps or {}, "profile": {"limits": limits or {}},
                                     "desk": {"fee": {"pct": fee_pct, "min_usd": fee_min}}}))
 
 

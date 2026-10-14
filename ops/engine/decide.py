@@ -1443,9 +1443,15 @@ def main():
         x.setdefault("grey_reason", None)
         if not v["buy"] and not x.get("greyed"):
             x["greyed"], x["grey_reason"] = True, actions.NOT_A_BUY + v["why"] + "."
-            m = re.match(r"^Buy (\S+): it (.*)$", str(x.get("title") or ""))
-            x["title"] = x["title_plain"] = ("%s %s, but it is not a buy now" % (m.group(1), m.group(2))) if m else \
-                "Not a buy now: " + re.sub(r"^Buy\s+", "", str(x.get("title") or x.get("ticker") or "idea"))
+            ttl = str(x.get("title") or "")
+            m = re.match(r"^Buy (\S+): it (.*)$", ttl)
+            if m:
+                x["title"] = "%s %s, but it is not a buy now" % (m.group(1), m.group(2))
+            elif ":" in ttl:
+                x["title"] = "%s: %s signal, but it is not a buy now" % (x.get("ticker"), ttl.split(":")[0].strip().lower())
+            else:
+                x["title"] = "%s: not a buy now" % x.get("ticker")
+            x["title_plain"] = x["title"]
     reasons = {"RULE:*": "the entry signal was for one day only", "SCORE:*": "the share no longer passes five of the seven checks", "TEST:*": "the test is over",
                "CORE": "part of the house core is now held, or the strategy changed"}
     if keeps:

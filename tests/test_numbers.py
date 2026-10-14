@@ -443,6 +443,9 @@ class Actions(unittest.TestCase):
         c = self.ctx()
         v = A.verdicts_from(c)["SCORE:NEW"]
         self.assertEqual((v["buy"], v["type"], v["n"]), (True, "SWAP", 1))
+        fresh = dict(c["cards"][0])
+        fresh.pop("status")                                                   # the desk judges fresh ideas before they have a status
+        self.assertIn("SCORE:NEW", A.verdicts_from(dict(c, cards=A.as_open([fresh]))))
         c["fct"]["NEW"]["h"]["by"]["due"] = "2027-10-14"
         c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.4
         v = A.verdicts_from(c)["SCORE:NEW"]
