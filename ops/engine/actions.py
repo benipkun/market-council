@@ -31,6 +31,7 @@ TAX_RATE = 0.15                          # Hungarian personal income tax on shar
 MIN_ORDER = 100.0                        # below this the minimum fee costs more than 1% each way
 FOOT = "Output of your own system's rules and estimates. You decide and place every order."
 STALE_FEEDS = ("desk", "screen", "quant", "books")
+FRACTION = "A fraction of a share: if Revolut does not take a limit order for a fraction, place it as a market order while the US market is open."
 
 
 def rj(rel, default=None):
@@ -226,6 +227,9 @@ def buy_line(x, usd, ctx, pays):
          "card": x["card"], "valid_until": x["valid_until"], "exit_rule": x["exit_rule"]}
     a["line"] = "BUY %s %s at limit $%.2f = $%s%s, fees $%.2f, paid from %s. Stop $%s, take-profit $%s." % (
         fmt_sh(sh), x["t"], x["limit"], money(cost), (" (%s HUF)" % "{:,}".format(a["huf"])) if a["huf"] else "", f_in, pays, money(x["stop"]), money(x["take_profit"]))
+    if not float(sh).is_integer():
+        a["flags"].append("fraction of a share")
+        a["line"] += " " + FRACTION
     return a
 
 
@@ -382,7 +386,7 @@ def plan_amount(usd, ctx, label=None):
                          "fees": fee(cost), "pays_with": "the rest of the new money", "flags": ["index fund: no edge claimed"], "evidence": {"label": "benchmark", "text": "the S&P 500 index fund every idea is measured against"},
                          "expected_usd": r2(cost * ctx.get("index_mu", 0.0861) - 2 * fee(cost)), "expected_note": "over a year at the engine's index assumption (%.1f%% a year)" % (100 * ctx.get("index_mu", 0.0861)),
                          "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], "SPY", cost, extra_cash=usd)},
-                         "line": "BUY %s SPY (S&P 500 index fund) at limit $%.2f = $%s, fees $%.2f: the rest of the money, where no idea beats the index fund." % (fmt_sh(sh), float(ctx["spy"]), money(cost), fee(cost))})
+                         "line": "BUY %s SPY (S&P 500 index fund) at limit $%.2f = $%s%s, fees $%.2f: the rest of the money, where no idea beats the index fund.%s" % (fmt_sh(sh), float(ctx["spy"]), money(cost), (" (%s HUF)" % "{:,}".format(round(cost * ctx["fx"]))) if ctx["fx"] else "", fee(cost), "" if float(sh).is_integer() else " " + FRACTION)})
             left -= cost + fee(cost)
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx) + " Keep the money as cash.", ctx))
