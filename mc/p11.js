@@ -39,9 +39,9 @@ return '<div class="gap" style="display:flex;flex-wrap:wrap;gap:6px;align-items:
 '<button class="btn sm" data-p11="sell">?</button>'+(inp.monthly_huf?'<button class="btn sm" data-p11="month">This month\'s '+Number(inp.monthly_huf).toLocaleString("en-US")+' HUF</button>':"")+'</div>'+
 (note?'<div class="src">'+esc(note)+'</div>':"");}
 function html(){var a=M.X.acts;if(!a||!a.actions)return "";
-var top=a.actions[0]||{},v=view;
+var top=a.actions[0]||{},v=view,cnt=a.actions.filter(function(x){return !x.decision;}).length;
 var body=v?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">'+esc(v.head)+'</div>'+list(v.acts)+'<div class="gap"><button class="btn sm" data-p11="back">Back to today\'s list</button></div>':list(a.actions);
-return M.blk("WHAT TO DO NOW",'<span class="stg '+(top.type==="HOLD"&&!top.ticker?"paper":"live")+'">'+a.actions.filter(function(x){return x.type!=="HOLD"||!x.decision;}).length+' ACTION'+(a.actions.length===1?"":"S")+'</span>'+((a.stale||[]).length?'<span class="stg stale" style="margin-left:6px">STALE DATA</span>':""),
+return M.blk("WHAT TO DO NOW",'<span class="stg '+(top.type==="HOLD"&&!top.ticker?"paper":"live")+'">'+cnt+' ACTION'+(cnt===1?"":"S")+'</span>'+((a.stale||[]).length?'<span class="stg stale" style="margin-left:6px">STALE DATA</span>':""),
 body+box(a)+reply(),
 "Worked out "+M.upd(a.as_of)+" from the books of "+esc(String(a.books_as_of||"").slice(0,16))+". "+esc(a.foot||""));}
 function paint(){var el=$("p11-host");if(el){var h=html();if(el.__h!==h){var v=($("p11-amt")||{}).value;el.innerHTML=h;el.__h=h;if(v&&$("p11-amt"))$("p11-amt").value=v;}}}
