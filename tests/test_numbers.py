@@ -431,7 +431,16 @@ class Actions(unittest.TestCase):
         self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))
         self.assertIn("index fund", acts[0]["line"])
 
+    def test_the_written_answer_and_method(self):
+        c = self.ctx()
+        out = A.text(A.answer("What should I do with 100000 HUF now?", c))
+        self.assertTrue(out.startswith("What to do with $303.03"))
+        self.assertTrue(out.endswith(A.FOOT))
+        self.assertIn("8.6% now", A.method_text(0.0861))
+        self.assertIn("HOLD KEEP", A.text(A.answer("Should I sell KEEP?", c)))
+
     def test_stale_data_holds_every_buy_back(self):
+
 
         acts, _ = A.today(self.ctx(stale=["desk"]))
         self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))

@@ -528,7 +528,7 @@ def text(ans):
         p = a.get("portfolio") or {}
         if p.get("largest"):
             extra.append("largest holding after: %s %d%%" % (p["largest"]["t"], round(100 * p["largest"]["share"])))
-        if p.get("bad_year") is not None:
+        if p.get("bad_year") is not None and p.get("bad_year_now") is not None:
             extra.append("bad year %.1f%% (now %.1f%%)" % (100 * p["bad_year"], 100 * (p.get("bad_year_now") or 0)))
         if a.get("evidence"):
             extra.append(a["evidence"]["text"])
@@ -540,6 +540,11 @@ def text(ans):
             lines.append("   " + ". ".join(extra) + ".")
     lines.append(FOOT)
     return "\n".join(lines)
+
+
+def method_text(index_mu):
+    return (__doc__.split("\n\n")[1].replace("\n", " ") + " The index fund is assumed to earn the safe rate plus 5%% a year (%.1f%% now), the engine's own"
+            " assumption. Shares are whole where the money buys at least one. Tax is an estimate at 15%% of the gain." % (100 * index_mu))
 
 
 def run(now=None, dec=None, spy_price=None):
@@ -556,7 +561,7 @@ def run(now=None, dec=None, spy_price=None):
                       "stock_cap": ctx["limits"].get("stock_cap"), "min_cash": ctx["limits"].get("min_cash"), "spy": ctx["spy"], "keeps": sorted(ctx["keeps"]),
                       "index_mu": r2(ctx["index_mu"], 4)},
            "candidates": [dict((k, v) for k, v in x.items()) for x in cands],
-           "method": __doc__.split("\n\n")[1].replace("\n", " ") + " The index fund is assumed to earn the safe rate plus 5% a year (%.1f%% now), the engine's own assumption. Shares are whole where the money buys at least one. Tax is an estimate at 15%% of the gain." % (100 * ctx["index_mu"]),
+           "method": method_text(ctx["index_mu"]),
            "foot": FOOT}
     with open(os.path.join(ROOT, "state", "actions.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
