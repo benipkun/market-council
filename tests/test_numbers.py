@@ -395,7 +395,7 @@ class Actions(unittest.TestCase):
         c = {"cards": [card], "fct": fct, "track": {"count": 32, "checks": {"quality": {"state": "unproven"}, "trend": {"state": "proven"}}},
              "hold": A.holding_map(snap), "nav": 1200.0, "cash": 300.0, "limits": {"stock_cap": 0.3, "min_cash": 0.03},
              "keeps": {"KEEP": {"target": 80.0, "by": "2027-10-05", "chance_touch": 0.79}}, "holds": {}, "pf": {}, "fx": 330.0, "stale": [],
-             "free_cash": 264.0, "monthly_huf": 120000.0, "monthly_usd": 363.64, "spy": 50.0}
+             "free_cash": 264.0, "monthly_huf": 120000.0, "monthly_usd": 363.64, "spy": 50.0, "today": datetime.date(2026, 10, 14), "index_mu": 0.0861}
         c.update(kw)
         return c
 
@@ -421,7 +421,18 @@ class Actions(unittest.TestCase):
         self.assertEqual([(x["type"], x.get("ticker")) for x in acts], [("BUY", "NEW"), ("BUY", "SPY"), ("HOLD", None)])
         self.assertEqual(acts[1]["shares"], 4.0)                                # $200.79 after the fee buys four $50 shares
 
+    def test_an_idea_must_beat_the_index_fund_not_just_zero(self):
+        # a year-long plan: 40% take-profit (+16%) first, 30% stop (-8%) first gives +4.0%, below the index fund's 8.61%
+        c = self.ctx()
+        c["fct"]["NEW"]["h"]["by"]["due"] = "2027-10-14"
+        acts, cands = A.today(c)
+        c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.4
+        acts, cands = A.today(c)
+        self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))
+        self.assertIn("index fund", acts[0]["line"])
+
     def test_stale_data_holds_every_buy_back(self):
+
         acts, _ = A.today(self.ctx(stale=["desk"]))
         self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))
         self.assertIn("stale", acts[0]["line"])

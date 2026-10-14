@@ -9,8 +9,9 @@ expected result after fees:
 
     expected result = amount x (P(take-profit first) x gain at take-profit - P(stop first) x loss at stop) - fees both ways
 
-An idea only becomes a BUY when that figure is above zero and the Forecaster does not rate it below an even chance
-of beating the index fund. When nothing qualifies the top action is HOLD, with the reason.
+An idea only becomes a BUY when that figure beats what the same money is expected to earn in the index fund over the
+same time (the engine's index assumption, after the same fees), and the Forecaster does not rate it below an even
+chance of beating the index fund. When nothing qualifies the top action is HOLD, with the reason.
 
 The decision desk runs it after every cycle and writes state/actions.json. The inbox routine and the app ask it
 questions:
@@ -61,16 +62,31 @@ def shares_for(usd, price):
     return float(n) if n >= 1 else math.floor(usd / price * 10000) / 10000.0
 
 
+HWORDS = {"1m": "a month", "3m": "three months", "1y": "a year", "by": "the card's date"}
+
+
 def fct_for(fct, t):
     f = (fct or {}).get(t) or {}
     if not f or f.get("none"):
         return None
-    h = f.get("h") or {}
-    by = (h.get("by") or {}).get("f") or {}
-    m1 = (h.get("1m") or {}).get("f") or {}
-    tp, sp, beat = by.get("tp_first") or {}, by.get("stop_first") or {}, m1.get("beat") or {}
-    return {"tp_first": tp.get("p"), "stop_first": sp.get("p"), "beat_index_1m": beat.get("p"), "due": (h.get("by") or {}).get("due") or (f.get("plan") or {}).get("due"),
-            "cases": tp.get("cases"), "few": bool(tp.get("few")), "range": [tp.get("lo"), tp.get("hi")] if tp else None}
+    h, plan = f.get("h") or {}, f.get("plan") or {}
+    # the take-profit / stop odds belong to the card's own horizon (the Forecaster's plan); the other odds to fixed horizons
+    hk = plan.get("horizon") if plan.get("horizon") in h else next((k for k in ("by", "1y", "3m", "1m") if k in h), None)
+    fh = (h.get(hk) or {}).get("f") or {}
+    tp, sp = fh.get("tp_first") or {}, fh.get("stop_first") or {}
+    beat = fh.get("beat") or ((h.get("1m") or {}).get("f") or {}).get("beat") or {}
+    bh = hk if fh.get("beat") else "1m"
+    return {"tp_first": tp.get("p"), "stop_first": sp.get("p"), "beat_index": beat.get("p"), "beat_over": HWORDS.get(bh, bh), "horizon": hk,
+            "due": (h.get(hk) or {}).get("due") or plan.get("due"), "cases": tp.get("cases"), "few": bool(tp.get("few")),
+            "range": [tp.get("lo"), tp.get("hi")] if tp else None}
+
+
+def years_to(due, today):
+    try:
+        d = datetime.date.fromisoformat(str(due)[:10])
+    except ValueError:
+        return 1.0
+    return max(1.0 / 12, (d - today).days / 365.25)
 
 
 def evidence(card, track, fc):
@@ -129,7 +145,11 @@ def candidates(ctx):
         edge = None
         if fc and fc.get("tp_first") is not None and up is not None and dn is not None:
             edge = fc["tp_first"] * up - (fc.get("stop_first") or 0.0) * dn
-        cap = float(c.get("profile_size") or 0)
+        # the yardstick: the same money in the index fund until the same date, at the engine's index assumption
+        years = years_to((fc or {}).get("due"), ctx.get("today") or datetime.date.today())
+        index_edge = ctx.get("index_mu", 0.0861) * years
+        # at most what the risk profile allows for one idea: the card's size, or the risk per trade over the stop distance
+        cap = float(c.get("profile_size") or 0) or ((float(lim.get("risk_per_trade") or 0.015) * nav / dn) if dn else 0.0)
         room = float(lim.get("stock_cap") or 0.3) * nav - (hold.get(t) or {}).get("value", 0.0)
         cap = max(0.0, min(cap, room)) if cap else max(0.0, room)
         held_back, flags, disagree = [], [], []
@@ -149,16 +169,19 @@ def candidates(ctx):
         ev = evidence(c, ctx["track"], fc)
         if ev["label"] == "unproven":
             flags.append("unproven")
-        beat = (fc or {}).get("beat_index_1m")
+        beat = (fc or {}).get("beat_index")
         if beat is not None and beat < 0.5:
-            disagree.append("the card says buy, but the Forecaster gives it only %d%% to beat the index fund over a month" % round(100 * beat))
+            disagree.append("the card says buy, but the Forecaster gives it only %d%% to beat the index fund over %s" % (round(100 * beat), fc.get("beat_over")))
         pf = c.get("portfolio") or {}
         if pf.get("change") is not None and pf.get("index_change") is not None and pf["change"] > pf["index_change"]:
             disagree.append("the same money in the index fund would cut the bad year more (%+.1f against %+.1f points)" % (100 * pf["index_change"], 100 * pf["change"]))
-        if edge is not None and edge <= 0:
-            disagree.append("expected result before fees is negative (%+.1f%%)" % (100 * edge))
+        vs_index = None
+        if edge is not None:
+            vs_index = "expected %+.1f%% by %s if it follows its order plan (%d%% take-profit first, %d%% stop first), against %+.1f%% for the index fund over the same time" % (
+                100 * edge, fc.get("due"), round(100 * fc["tp_first"]), round(100 * (fc.get("stop_first") or 0)), 100 * index_edge)
         fund = c.get("funding") or {}
         out.append({"t": t, "name": c.get("name"), "card": c.get("id"), "limit": round(limit, 2), "stop": stop, "take_profit": tp, "up": up, "dn": dn, "edge": edge,
+                     "index_edge": index_edge, "years": round(years, 3), "vs_index": vs_index,
                      "cap": round(cap, 2), "fc": fc, "evidence": ev, "flags": flags, "disagree": disagree, "held_back": held_back,
                      "bad_per_usd": (pf["change"] / pf["size"]) if pf.get("change") is not None and pf.get("size") else None, "bad_before": pf.get("bad_before"),
                      "fund_sell": fund.get("sell") if fund.get("kind") == "paired_sale" else None, "fund_why": fund.get("why"),
@@ -167,7 +190,19 @@ def candidates(ctx):
 
 
 def qualifies(x):
-    return not x["held_back"] and x["edge"] is not None and x["edge"] > 0 and not ((x["fc"] or {}).get("beat_index_1m") is not None and x["fc"]["beat_index_1m"] < 0.5)
+    # a BUY only when it is expected to do better than the same money in the index fund, and the Forecaster does not
+    # give it less than an even chance of beating the index fund
+    beat = (x["fc"] or {}).get("beat_index")
+    return not x["held_back"] and x["edge"] is not None and x["edge"] > x["index_edge"] and not (beat is not None and beat < 0.5)
+
+
+def reason(x):
+    # the first reason an idea is not a BUY
+    if x["held_back"]:
+        return x["held_back"][0]
+    if x["edge"] is not None and x["edge"] <= x["index_edge"]:
+        return x["vs_index"]
+    return (x["disagree"] or ["its expected result after fees does not beat the index fund"])[0]
 
 
 def buy_line(x, usd, ctx, pays):
@@ -178,13 +213,14 @@ def buy_line(x, usd, ctx, pays):
     f_in = fee(cost)
     f_out = fee(cost * (1 + (x["up"] or 0)))
     exp = cost * (x["edge"] or 0) - f_in - f_out
+    idx = cost * x["index_edge"] - fee(cost) - fee(cost * (1 + x["index_edge"]))
     fx = ctx["fx"]
     bad = (x["bad_before"] + x["bad_per_usd"] * cost) if x["bad_per_usd"] is not None and x["bad_before"] is not None else None
     new_money = "new money" in pays
     a = {"type": "BUY", "ticker": x["t"], "shares": sh, "limit": x["limit"], "usd": cost, "huf": round(cost * fx) if fx else None, "fees": round(f_in, 2),
          "fees_both_ways": round(f_in + f_out, 2), "pays_with": pays, "stop": x["stop"], "take_profit": x["take_profit"],
          "if_take_profit": r2(cost * (x["up"] or 0) - f_in - f_out), "if_stop": r2(-cost * (x["dn"] or 0) - f_in - fee(cost * (1 - (x["dn"] or 0)))),
-         "expected_usd": r2(exp), "forecast": x["fc"], "evidence": x["evidence"], "flags": list(x["flags"]), "disagree": list(x["disagree"]),
+         "expected_usd": r2(exp), "index_usd": r2(idx), "forecast": x["fc"], "evidence": x["evidence"], "flags": list(x["flags"]), "disagree": list(x["disagree"]),
          "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], x["t"], cost, extra_cash=cost if new_money else 0.0),
                        "bad_year": r2(bad, 4), "bad_year_now": x["bad_before"], "bad_note": "scaled from the card's own figure" if bad is not None else "not worked out for this idea"},
          "card": x["card"], "valid_until": x["valid_until"], "exit_rule": x["exit_rule"]}
@@ -225,9 +261,9 @@ def swap_line(x, ctx):
     if not b:
         return None
     sfc = fct_for(ctx["fct"], s) or {}
-    why = "%s: %s" % (x["t"], x["evidence"]["text"])
-    if x["fc"] and x["fc"].get("beat_index_1m") is not None and sfc.get("beat_index_1m") is not None:
-        why = "%s %d%% to beat the index fund over a month against %d%% for %s; %s" % (x["t"], round(100 * x["fc"]["beat_index_1m"]), round(100 * sfc["beat_index_1m"]), s, x["fund_why"] or "")
+    why = "%s is %s. %s" % (x["t"], x["vs_index"], x["fund_why"] or "")
+    if sfc.get("beat_index") is not None:
+        why += " The Forecaster gives %s %d%% to beat the index fund over %s." % (s, round(100 * sfc["beat_index"]), sfc.get("beat_over"))
     net = round(sn["proceeds"] - b["usd"] - b["fees"], 2)
     a = dict(b)
     a.update({"type": "SWAP", "sell": dict(sn, ticker=s), "buy": {"ticker": x["t"], "shares": b["shares"], "limit": b["limit"], "usd": b["usd"]},
@@ -283,6 +319,8 @@ def build_ctx(dec=None):
             "hold": holding_map(snap), "nav": nav, "cash": cash, "limits": lim, "keeps": dec.get("keeps") or {}, "holds": dec.get("holds") or {},
             "pf": dec.get("portfolio_first") or {}, "fx": fx, "stale": stale, "free_cash": max(0.0, cash - float(lim.get("min_cash") or 0.03) * nav),
             "monthly_huf": huf, "monthly_usd": (huf / fx) if huf and fx else None, "spy": dec.get("spy_price"),
+            "today": datetime.datetime.now(datetime.timezone.utc).date(),
+            "index_mu": float(((rj("state/quant.json", {}) or {}).get("opt") or {}).get("rf") or 0.04) + 0.05,
             "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of")}
 
 
@@ -304,7 +342,7 @@ def today(ctx):
             a = buy_line(x, usd, ctx, pays)
             if a and pays == "free cash":
                 cash -= a["usd"] + a["fees"]
-        if a and (a["expected_usd"] or 0) > 0:
+        if a and a["expected_usd"] is not None and a["expected_usd"] > (a.get("index_usd") or 0):
             acts.append(a)
     acts.sort(key=lambda a: -(a["expected_usd"] or 0))
     if not acts:
@@ -318,10 +356,7 @@ def why_nothing(cands, ctx):
         return "Data is stale (%s), so every buy waits until it updates." % ", ".join(ctx["stale"])
     if not cands:
         return "There is no open idea card, so nothing beats what you hold or the index fund after fees."
-    parts = []
-    for x in cands[:4]:
-        r = x["held_back"][0] if x["held_back"] else (x["disagree"][0] if x["disagree"] else "its expected result after fees is not above zero")
-        parts.append("%s: %s" % (x["t"], r))
+    parts = ["%s: %s" % (x["t"], reason(x)) for x in cands[:6]]
     return "No idea beats holding or the index fund after fees. " + "; ".join(parts) + "."
 
 
@@ -336,7 +371,7 @@ def plan_amount(usd, ctx, label=None):
         if put < max(MIN_ORDER, x["limit"] if x["limit"] < 1000 else MIN_ORDER):
             continue
         a = buy_line(x, put, ctx, "the new money")
-        if a and (a["expected_usd"] or 0) > 0:
+        if a and a["expected_usd"] is not None and a["expected_usd"] > (a.get("index_usd") or 0):
             acts.append(a)
             left -= a["usd"] + a["fees"]
     if left >= MIN_ORDER and ctx.get("spy"):
@@ -345,6 +380,7 @@ def plan_amount(usd, ctx, label=None):
         if cost > 0:
             acts.append({"type": "BUY", "ticker": "SPY", "shares": sh, "limit": round(float(ctx["spy"]), 2), "usd": cost, "huf": round(cost * ctx["fx"]) if ctx["fx"] else None,
                          "fees": fee(cost), "pays_with": "the rest of the new money", "flags": ["index fund: no edge claimed"], "evidence": {"label": "benchmark", "text": "the S&P 500 index fund every idea is measured against"},
+                         "expected_usd": r2(cost * ctx.get("index_mu", 0.0861) - 2 * fee(cost)), "expected_note": "over a year at the engine's index assumption (%.1f%% a year)" % (100 * ctx.get("index_mu", 0.0861)),
                          "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], "SPY", cost, extra_cash=usd)},
                          "line": "BUY %s SPY (S&P 500 index fund) at limit $%.2f = $%s, fees $%.2f: the rest of the money, where no idea beats the index fund." % (fmt_sh(sh), float(ctx["spy"]), money(cost), fee(cost))})
             left -= cost + fee(cost)
@@ -375,12 +411,12 @@ def should_sell(t, ctx):
         a.update(sn)
         a["portfolio"] = {"largest": largest_after(ctx["hold"], ctx["nav"], drop_t=t)}
         return number([a])
-    beat = sfc.get("beat_index_1m")
-    reason = "no idea that qualifies is paired with selling it, and it is above your maximum-loss line%s. Selling would cost $%.2f in fees%s." % (
+    beat = sfc.get("beat_index")
+    why = "no idea that beats the index fund is paired with selling it, and it is above your maximum-loss line%s. Selling would cost $%.2f in fees%s." % (
         (" ($%s)" % money(floor)) if floor else "", sn["fees"], (" and about $%.2f tax" % sn["tax"]) if sn["tax"] else "")
     if beat is not None:
-        reason += " The Forecaster gives it %d%% to beat the index fund over a month." % round(100 * beat)
-    return number([{"type": "HOLD", "ticker": t, "line": "HOLD %s: %s" % (t, reason[0].upper() + reason[1:]), "if_sold": sn,
+        why += " The Forecaster gives it %d%% to beat the index fund over %s." % (round(100 * beat), sfc.get("beat_over"))
+    return number([{"type": "HOLD", "ticker": t, "line": "HOLD %s: %s" % (t, why[0].upper() + why[1:]), "if_sold": sn,
                     "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], drop_t=t), "bad_year_if_sold": ((ctx["pf"].get("sells") or {}).get(t))}}])
 
 
@@ -440,8 +476,9 @@ def buy_one(t, usd, ctx):
             why += " You hold it; ask \"Should I sell %s?\" for its numbers." % t
         return number([hold_top(why, ctx)])
     if not qualifies(x):
-        r = (x["held_back"] or x["disagree"] or ["its expected result after fees is not above zero"])[0]
-        return number([dict(hold_top("Do not buy %s now: %s." % (t, r), ctx), ticker=t, evidence=x["evidence"], forecast=x["fc"])])
+        a = dict(hold_top("Do not buy %s now: %s." % (t, reason(x)), ctx), ticker=t, evidence=x["evidence"], forecast=x["fc"], disagree=x["disagree"])
+        a["line"] = "HOLD: do not buy %s now. %s." % (t, reason(x)[0].upper() + reason(x)[1:])
+        return number([a])
     if usd is None:
         usd = min(x["cap"], ctx["free_cash"]) if ctx["free_cash"] >= MIN_ORDER else x["cap"]
         pays = "free cash" if ctx["free_cash"] >= MIN_ORDER and usd <= ctx["free_cash"] else "new money"
@@ -478,8 +515,12 @@ def text(ans):
         fc = a.get("forecast") or {}
         if fc.get("tp_first") is not None:
             extra.append("Forecaster: %d%% take-profit first, %d%% stop first by %s" % (round(100 * fc["tp_first"]), round(100 * (fc.get("stop_first") or 0)), fc.get("due")))
-        if a.get("expected_usd") is not None:
-            extra.append("expected after fees %s$%s (take-profit %s, stop %s)" % ("+" if a["expected_usd"] >= 0 else "-", money(abs(a["expected_usd"])), money(a.get("if_take_profit")), money(a.get("if_stop"))))
+        if a.get("expected_usd") is not None and a.get("if_take_profit") is not None:
+            extra.append("expected after fees %s$%s, the same money in the index fund %s$%s (at take-profit %s, at stop %s)" % (
+                "+" if a["expected_usd"] >= 0 else "-", money(abs(a["expected_usd"])), "+" if (a.get("index_usd") or 0) >= 0 else "-", money(abs(a.get("index_usd") or 0)),
+                money(a.get("if_take_profit")), money(a.get("if_stop"))))
+        elif a.get("expected_usd") is not None:
+            extra.append("expected after fees %s$%s %s" % ("+" if a["expected_usd"] >= 0 else "-", money(abs(a["expected_usd"])), a.get("expected_note") or ""))
         p = a.get("portfolio") or {}
         if p.get("largest"):
             extra.append("largest holding after: %s %d%%" % (p["largest"]["t"], round(100 * p["largest"]["share"])))
@@ -508,9 +549,10 @@ def run(now=None, dec=None, spy_price=None):
            "monthly_answer": plan_amount(ctx["monthly_usd"], ctx) if ctx["monthly_usd"] else None,
            "inputs": {"cash": r2(ctx["cash"]), "free_cash": r2(ctx["free_cash"]), "nav": r2(ctx["nav"]), "usd_huf": r2(ctx["fx"], 4), "monthly_huf": ctx["monthly_huf"],
                       "monthly_usd": r2(ctx["monthly_usd"]), "fee_pct": FEE_PCT, "fee_min_usd": FEE_MIN, "min_order": MIN_ORDER, "tax_rate": TAX_RATE,
-                      "stock_cap": ctx["limits"].get("stock_cap"), "min_cash": ctx["limits"].get("min_cash"), "spy": ctx["spy"], "keeps": sorted(ctx["keeps"])},
+                      "stock_cap": ctx["limits"].get("stock_cap"), "min_cash": ctx["limits"].get("min_cash"), "spy": ctx["spy"], "keeps": sorted(ctx["keeps"]),
+                      "index_mu": r2(ctx["index_mu"], 4)},
            "candidates": [dict((k, v) for k, v in x.items()) for x in cands],
-           "method": __doc__.split("\n\n")[1].replace("\n", " ") + " Shares are whole where the money buys at least one. Tax is an estimate at 15% of the gain.",
+           "method": __doc__.split("\n\n")[1].replace("\n", " ") + " The index fund is assumed to earn the safe rate plus 5% a year (%.1f%% now), the engine's own assumption. Shares are whole where the money buys at least one. Tax is an estimate at 15%% of the gain." % (100 * ctx["index_mu"]),
            "foot": FOOT}
     with open(os.path.join(ROOT, "state", "actions.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
