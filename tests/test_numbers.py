@@ -432,6 +432,15 @@ class Actions(unittest.TestCase):
         self.assertAlmostEqual(A.parse("100000 Ft", c)[1], 303.03, places=2)
         self.assertEqual(A.parse("What should I do with $500?", c), ("amount", 500.0))
         self.assertEqual(A.parse("Should I sell uber?", c), ("sell", "UBER"))
+        self.assertEqual(A.parse("How much NEW should I buy?", c), ("buy", ("NEW", None)))
+
+    def test_one_idea_at_the_limit_and_above_it(self):
+        c = self.ctx()
+        a = A.buy_one("NEW", None, c)[0]
+        self.assertEqual((a["type"], a["shares"], a["pays_with"]), ("BUY", 1.0, "free cash"))      # $150 allowed, one $100 share
+        b = A.buy_one("NEW", 400.0, c)[0]
+        self.assertEqual(b["shares"], 4.0)                                                        # the numbers for the amount asked
+        self.assertIn("above your limit", b["flags"])
 
 
 if __name__ == "__main__":

@@ -384,11 +384,33 @@ def should_sell(t, ctx):
                     "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], drop_t=t), "bad_year_if_sold": ((ctx["pf"].get("sells") or {}).get(t))}}])
 
 
+STOP = {"NOW", "IT", "ON", "ALL", "A", "I", "SO", "ARE", "BE", "DO", "OR", "AND", "FOR", "THE", "BUY", "SELL", "HOW", "MUCH", "WITH", "WHAT", "USD", "HUF", "FT", "RN"}
+
+
+def ticker_in(s, ctx):
+    # a share named in the question: one the desk or the books know, or any word written in capitals
+    known = set(ctx["hold"]) | set(c.get("ticker") for c in ctx["cards"] if c.get("ticker")) | set(ctx["fct"] or {})
+    for w in re.findall(r"[A-Za-z.]{1,6}", s):
+        if w.upper() in STOP:
+            continue
+        if w.upper() in known or (w.isupper() and len(w) >= 2):
+            return w.upper()
+    return None
+
+
 def parse(q, ctx):
     s = (q or "").strip()
     m = re.search(r"sell\s+([A-Za-z.]{1,6})\b", s, re.I)
     if m:
         return ("sell", m.group(1).upper())
+    t = ticker_in(s, ctx)
+    if t and re.search(r"\b(buy|how much|add|put)\b", s, re.I):
+        amt = parse_amount(s, ctx)
+        return ("buy", (t, amt[1] if amt[0] == "amount" else None))
+    return parse_amount(s, ctx)
+
+
+def parse_amount(s, ctx):
     m = re.search(r"([$])?\s*([0-9][0-9 ,.]*)\s*(k\b)?\s*(huf|ft|forint|usd|dollars?|\$)?", s, re.I)
     if m and re.search(r"\d", m.group(2)):
         raw = m.group(2).strip().replace(" ", "")
@@ -408,9 +430,37 @@ def parse(q, ctx):
     return ("today", None)
 
 
+def buy_one(t, usd, ctx):
+    # "How much T should I buy?" / "Should I buy T for $X?": that idea's numbers, at what the risk profile allows unless
+    # an amount is given; an amount above the limit is shown as asked, with the warning in one line
+    x = next((c for c in candidates(ctx) if c["t"] == t), None)
+    if not x:
+        why = "%s has no open idea card, so your system has no order plan (limit, stop, take-profit) for it." % t
+        if t in ctx["hold"]:
+            why += " You hold it; ask \"Should I sell %s?\" for its numbers." % t
+        return number([hold_top(why, ctx)])
+    if not qualifies(x):
+        r = (x["held_back"] or x["disagree"] or ["its expected result after fees is not above zero"])[0]
+        return number([dict(hold_top("Do not buy %s now: %s." % (t, r), ctx), ticker=t, evidence=x["evidence"], forecast=x["fc"])])
+    if usd is None:
+        usd = min(x["cap"], ctx["free_cash"]) if ctx["free_cash"] >= MIN_ORDER else x["cap"]
+        pays = "free cash" if ctx["free_cash"] >= MIN_ORDER and usd <= ctx["free_cash"] else "new money"
+    else:
+        pays = "free cash" if usd <= ctx["free_cash"] else "new money"
+    a = buy_line(x, usd, ctx, pays)
+    if not a:
+        return number([hold_top("The amount is too small for one share of %s at $%.2f." % (t, x["limit"]), ctx)])
+    if usd > x["cap"] + 0.01:
+        a["flags"].append("above your limit")
+        a["line"] += " Warning: your risk profile allows at most $%s in this idea; this is $%s." % (money(x["cap"]), money(a["usd"]))
+    return number([a])
+
+
 def answer(q, ctx):
     kind, val = parse(q, ctx)
-    if kind == "sell":
+    if kind == "buy":
+        acts, head = buy_one(val[0], val[1], ctx), "Should I buy %s?" % val[0]
+    elif kind == "sell":
         acts, head = should_sell(val, ctx), "Should I sell %s?" % val
     elif kind == "amount" and val:
         acts = plan_amount(val, ctx)
