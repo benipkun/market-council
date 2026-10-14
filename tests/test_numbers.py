@@ -387,7 +387,7 @@ class Actions(unittest.TestCase):
     def ctx(self, **kw):
         snap = {"positions": [{"ticker": "KEEP", "qty": 10, "last_price": 70.0, "market_value": 700.0, "cost_basis": 750.0},
                               {"ticker": "OLD", "qty": 10, "last_price": 20.0, "market_value": 200.0, "cost_basis": 120.0}]}
-        card = {"kind": "idea", "status": "open", "ticker": "NEW", "id": "I1", "entry": 100.0, "cost": {"limit": 100.0}, "stop": 92.0, "take_profit": 116.0,
+        card = {"kind": "idea", "status": "open", "ticker": "NEW", "id": "I1", "key": "SCORE:NEW", "entry": 100.0, "cost": {"limit": 100.0}, "stop": 92.0, "take_profit": 116.0,
                 "profile_size": 150.0, "funding": {"kind": "paired_sale", "sell": "OLD", "why": "OLD passes 0 of 7 checks."},
                 "checks": [{"id": "quality", "pass": True}, {"id": "trend", "pass": True}, {"id": "value", "pass": False}]}
         fct = {"NEW": {"h": {"by": {"due": "2026-11-20", "f": {"tp_first": {"p": 0.5, "cases": 900}, "stop_first": {"p": 0.3}}}, "1m": {"f": {"beat": {"p": 0.55}}}}},
@@ -438,6 +438,16 @@ class Actions(unittest.TestCase):
         self.assertTrue(out.endswith(A.FOOT))
         self.assertIn("8.6% now", A.method_text(0.0861))
         self.assertIn("HOLD KEEP", A.text(A.answer("Should I sell KEEP?", c)))
+
+    def test_the_cards_follow_the_action_list(self):
+        c = self.ctx()
+        v = A.verdicts_from(c)["SCORE:NEW"]
+        self.assertEqual((v["buy"], v["type"], v["n"]), (True, "SWAP", 1))
+        c["fct"]["NEW"]["h"]["by"]["due"] = "2027-10-14"
+        c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.4
+        v = A.verdicts_from(c)["SCORE:NEW"]
+        self.assertFalse(v["buy"])
+        self.assertIn("index fund", v["why"])
 
     def test_stale_data_holds_every_buy_back(self):
 

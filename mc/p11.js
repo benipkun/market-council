@@ -58,6 +58,9 @@ else if(k==="amt"){var raw=String(($("p11-amt")||{}).value||"").replace(/\s/g,""
 raw=/^\d{1,3}([.,]\d{3})+$/.test(raw)?raw.replace(/[.,]/g,""):raw.replace(",",".");var v=parseFloat(raw);
 if(!(v>0)){note="Type an amount first.";}else{view=null;send("What should I do with "+(cur==="USD"?"$"+v:v+" HUF")+" now?");return;}}
 paint();});
+/* a card the action list buys shows its action line on top, so the card and the list say the same thing */
+var prevTop=M.cardTop;
+M.cardTop=function(c){var h=prevTop?prevTop(c):"",v=c&&c.verdict;if(v&&v.buy)h='<div class="q"><span class="stg live">ACTION '+esc(String(v.n||""))+' IN TODAY\'S LIST</span> '+esc(v.line||"")+'</div>'+h;return h;};
 var prev=M.slots["td-dec"];
 M.slots["td-dec"]=function(){setTimeout(paint,0);var h=prev?prev():"";return '<div id="p11-host"></div>'+h;};
 MC.hooks.push(paint);

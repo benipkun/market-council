@@ -31,6 +31,7 @@ TAX_RATE = 0.15                          # Hungarian personal income tax on shar
 MIN_ORDER = 100.0                        # below this the minimum fee costs more than 1% each way
 FOOT = "Output of your own system's rules and estimates. You decide and place every order."
 STALE_FEEDS = ("desk", "screen", "quant", "books")
+NOT_A_BUY = "Not a buy now: "
 FRACTION = "A fraction of a share: if Revolut does not take a limit order for a fraction, place it as a market order while the US market is open."
 
 
@@ -181,7 +182,7 @@ def candidates(ctx):
             vs_index = "expected %+.1f%% by %s if it follows its order plan (%d%% take-profit first, %d%% stop first), against %+.1f%% for the index fund over the same time" % (
                 100 * edge, fc.get("due"), round(100 * fc["tp_first"]), round(100 * (fc.get("stop_first") or 0)), 100 * index_edge)
         fund = c.get("funding") or {}
-        out.append({"t": t, "name": c.get("name"), "card": c.get("id"), "limit": round(limit, 2), "stop": stop, "take_profit": tp, "up": up, "dn": dn, "edge": edge,
+        out.append({"t": t, "key": c.get("key"), "name": c.get("name"), "card": c.get("id"), "limit": round(limit, 2), "stop": stop, "take_profit": tp, "up": up, "dn": dn, "edge": edge,
                      "index_edge": index_edge, "years": round(years, 3), "vs_index": vs_index,
                      "cap": round(cap, 2), "fc": fc, "evidence": ev, "flags": flags, "disagree": disagree, "held_back": held_back,
                      "bad_per_usd": (pf["change"] / pf["size"]) if pf.get("change") is not None and pf.get("size") else None, "bad_before": pf.get("bad_before"),
@@ -205,7 +206,10 @@ def reason(x):
         r = x["vs_index"]
     else:
         r = (x["disagree"] or ["its expected result after fees does not beat the index fund"])[0]
-    return str(r).rstrip(". ")
+    r = str(r)
+    if r.startswith(NOT_A_BUY):
+        r = r[len(NOT_A_BUY):]
+    return r.rstrip(". ")
 
 
 def buy_line(x, usd, ctx, pays):
@@ -226,7 +230,7 @@ def buy_line(x, usd, ctx, pays):
          "expected_usd": r2(exp), "index_usd": r2(idx), "forecast": x["fc"], "evidence": x["evidence"], "flags": list(x["flags"]), "disagree": list(x["disagree"]),
          "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], x["t"], cost, extra_cash=cost if new_money else 0.0),
                        "bad_year": r2(bad, 4), "bad_year_now": x["bad_before"], "bad_note": "scaled from the card's own figure" if bad is not None else "not worked out for this idea"},
-         "card": x["card"], "valid_until": x["valid_until"], "exit_rule": x["exit_rule"]}
+         "card": x["card"], "key": x.get("key"), "valid_until": x["valid_until"], "exit_rule": x["exit_rule"]}
     a["line"] = "BUY %s %s at limit $%.2f = $%s%s, fees $%.2f, paid from %s. Stop $%s, take-profit $%s." % (
         fmt_sh(sh), x["t"], x["limit"], money(cost), (" (%s HUF)" % "{:,}".format(a["huf"])) if a["huf"] else "", f_in, pays, money(x["stop"]), money(x["take_profit"]))
     if not float(sh).is_integer():
@@ -355,6 +359,25 @@ def today(ctx):
         acts.append(hold_top(why_nothing(cands, ctx), ctx))
     acts += [hold_keep(t, ctx) for t in sorted(ctx["keeps"]) if t in ctx["hold"]]
     return number(acts), cands
+
+
+def verdicts_from(ctx):
+    # the decision desk's one judge: a card is a BUY only if it is in today's action list; otherwise it carries the reason
+    acts, cands = today(ctx)
+    by_key = dict((a.get("key"), a) for a in acts if a["type"] in ("BUY", "SWAP") and a.get("key"))
+    out = {}
+    for x in cands:
+        a = by_key.get(x.get("key"))
+        if a:
+            out[x["key"]] = {"buy": True, "n": a["n"], "type": a["type"], "line": a["line"], "expected_usd": a.get("expected_usd"), "index_usd": a.get("index_usd")}
+        elif x.get("key"):
+            out[x["key"]] = {"buy": False, "why": reason(x)}
+    return out
+
+
+def verdicts(cards, keeps=None, limits=None, fee_pct=None, fee_min=None):
+    return verdicts_from(build_ctx({"cards": cards, "keeps": keeps or {}, "profile": {"limits": limits or {}},
+                                    "desk": {"fee": {"pct": fee_pct, "min_usd": fee_min}}}))
 
 
 def why_nothing(cands, ctx):

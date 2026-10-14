@@ -384,7 +384,7 @@ def merge_cards(cards, wanted, now, reasons=None):
         if old and old["status"] == "approved":
             continue
         if old and old["status"] == "open":
-            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost", "price_check", "forecast_line", "portfolio"):
+            for k in ("title", "title_plain", "orders", "why", "against", "method", "effect", "part", "source", "source_id", "name", "legs", "entry", "stop", "take_profit", "stop_pct", "target_pct", "exit_rule", "gain_basis", "measured", "sizes", "min_size", "funding", "record", "rank", "greyed", "grey_reason", "profile_size", "price_at", "stale", "checks", "cost", "price_check", "forecast_line", "portfolio", "verdict"):
                 if k in w:
                     old[k] = w[k]
             old["refreshed"] = now
@@ -1426,6 +1426,26 @@ def main():
         pfirst = portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct)
     except Exception as e:
         pfirst = {"error": "%s: %s" % (type(e).__name__, str(e)[:120])}
+    # one judge: an idea card asks for your yes only when today's action list would buy it; otherwise it says why not,
+    # so the cards, the phone, the morning check and the action list never disagree
+    try:
+        import actions
+        verdict = actions.verdicts(wanted, keeps, lim, FEE_PCT, FEE_MIN)
+    except Exception as e:
+        verdict = {}
+        print("actions: the cards were not judged (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    for x in wanted:
+        v = verdict.get(x.get("key"))
+        if x.get("kind") != "idea" or not v:
+            continue
+        x["verdict"] = v
+        x.setdefault("greyed", False)
+        x.setdefault("grey_reason", None)
+        if not v["buy"] and not x.get("greyed"):
+            x["greyed"], x["grey_reason"] = True, actions.NOT_A_BUY + v["why"] + "."
+            m = re.match(r"^Buy (\S+): it (.*)$", str(x.get("title") or ""))
+            x["title"] = x["title_plain"] = ("%s %s, but it is not a buy now" % (m.group(1), m.group(2))) if m else \
+                "Not a buy now: " + re.sub(r"^Buy\s+", "", str(x.get("title") or x.get("ticker") or "idea"))
     reasons = {"RULE:*": "the entry signal was for one day only", "SCORE:*": "the share no longer passes five of the seven checks", "TEST:*": "the test is over",
                "CORE": "part of the house core is now held, or the strategy changed"}
     if keeps:

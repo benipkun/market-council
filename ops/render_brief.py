@@ -261,6 +261,13 @@ def main():
                    "all sources working" if not issues else "see System health", "up" if not issues else "wn")
     sections.append(("glance", "At a glance", '<div class="tiles">{}</div>'.format(glance), ""))
 
+    # What to do now: the numbered action list (ops/engine/actions.py), the same one the app shows on Today
+    acts = obj(load("state/actions.json"))
+    if arr(acts.get("actions")):
+        rows = "".join('<div class="pick"><div class="pt"><span class="tk">{}. {}</span></div><p>{}</p></div>'.format(
+            e(obj(a).get("n")), e(obj(a).get("type")), e(obj(a).get("line"))) for a in arr(acts.get("actions")))
+        sections.append(("actions", "What to do now", rows + '<p class="note">{}</p>'.format(e(acts.get("foot"))), ""))
+
     # Decision desk: standing ideas from every source. A card stays until it is answered or expires,
     # so this section is not empty just because nothing new crossed a line this hour.
     if dec:
@@ -283,7 +290,7 @@ def main():
                     e(x.get("t")), e(x.get("name")), e(x.get("score")), e(x.get("of") or 7), e(needs or "more data"))
             body += '<div class="box">{}</div>'.format(rows)
         if grey:
-            body += '<p class="note">{} more idea{} shown in the app as not worth it at small sizes, because fees would take the gain.</p>'.format(
+            body += '<p class="note">{} more idea{} shown in the app as not a buy now, each with the reason (most often: the index fund is expected to do better after fees).</p>'.format(
                 len(grey), "" if len(grey) == 1 else "s")
         hours = None
         made = parse(dec.get("as_of"))
