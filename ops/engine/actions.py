@@ -32,7 +32,7 @@ MIN_ORDER = 100.0                        # below this the minimum fee costs more
 FOOT = "Output of your own system's rules and estimates. You decide and place every order."
 STALE_FEEDS = ("desk", "screen", "quant", "books")
 NOT_A_BUY = "Not a buy now: "
-FRACTION = "A fraction of a share: if Revolut does not take a limit order for a fraction, place it as a market order while the US market is open."
+FRACTION = "A fraction of a share: Revolut takes limit orders for whole shares only, so place it as a market order while the US market is open."
 
 
 def rj(rel, default=None):
