@@ -517,6 +517,8 @@ class Plans(unittest.TestCase):
         k = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}, {"target": 80.0, "by": "2027-10-05"}, "long",
                             [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 15))
         self.assertEqual((k["stop"], k["take_profit"], k["until"], k["kept"]), (31.5, 80.0, "2027-10-05", True))
+        capped = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 40.0}]}, None, "long", [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 15))
+        self.assertEqual(capped["stop"], 40.0)                                  # never past the maximum-loss line
 
     def test_the_trailing_rule(self):
         p = {"id": "H:AAA", "ticker": "AAA", "price": 56.0, "stop": 45.0, "take_profit": 70.0, "average_cost": 50.0, "initial_stop": 45.0,

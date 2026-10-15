@@ -111,6 +111,10 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today):
         until, why_until = str(keep.get("by") or "")[:10], "your review date"
     else:
         stop, stop_why = stop_level(price, closes, label)
+        # never past your maximum loss: the stop sits no lower than your maximum-loss line
+        floor = next((lv.get("price") for lv in (hold or {}).get("levels") or [] if str(lv.get("name") or "").startswith("Maximum-loss")), None)
+        if floor and float(floor) > stop:
+            stop, stop_why = round(float(floor), 2), "your maximum-loss line (30%% under your average cost); the normal-movement stop ($%.2f) would sit below it" % stop
         if same and prev.get("stop") and float(prev["stop"]) > stop:
             stop, stop_why = float(prev["stop"]), "kept from the earlier plan: a stop is never lowered"
         tp, tp_why = round(price + 2 * (price - stop), 2), "twice the stop distance above today's price"
@@ -147,7 +151,7 @@ def idea_plan(c, label, fct, nav, lim, today):
     cost = shares * limit
     valid = min(day(c["expires"]) if c.get("expires") else today + datetime.timedelta(days=14), today + datetime.timedelta(days=min(LABELS[label]["days"], REVOLUT_MAX_DAYS)))
     fc = forecast_for(fct, t, stop, tp)
-    f_in, f_out = fee(cost), fee(cost * (1 + up))
+    f_in, f_out = fee(cost or limit), fee((cost or limit) * (1 + up))          # for one share when the allowed size buys none
     exp = (cost * (fc["tp_first"] * up - (fc.get("stop_first") or 0) * dn) - f_in - f_out) if (fc and cost) else None
     v = c.get("verdict") or {}
     plan = {"id": c.get("key"), "card": c.get("id"), "ticker": t, "held": False, "label": label, "title": c.get("title"), "limit": r2(limit), "valid_until": valid.isoformat(),
