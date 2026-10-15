@@ -19,9 +19,39 @@ def money_flows(ledger):
     # money put in (+) and taken out (-), by day
     out = []
     for e in (ledger or {}).get("entries") or []:
-        if e.get("action") in ("deposit", "withdraw") and e.get("usd") and e.get("status") == "applied":
+        # an entry that was later undone (a correction) never happened, so it is left out
+        if e.get("action") in ("deposit", "withdraw") and e.get("usd") and e.get("status") == "applied" and not e.get("undone_by"):
             out.append((str(e.get("at"))[:10], float(e["usd"]) * (1.0 if e["action"] == "deposit" else -1.0)))
     return sorted(out)
+
+
+def payments(ledger):
+    # every payment in and out with its date and ledger id, corrections included and marked, so the figures can be audited
+    return [{"date": str(e.get("at"))[:10], "id": e.get("id"), "action": e.get("action"), "usd": E.rd(float(e.get("usd") or 0), 2),
+             "counted": not e.get("undone_by"), "undone_by": e.get("undone_by")}
+            for e in (ledger or {}).get("entries") or [] if e.get("action") in ("deposit", "withdraw") and e.get("status") == "applied"]
+
+
+def at_cap(days, cap, closes):
+    # A-006: the same record if no holding had been above the cap on the first day: the excess goes into the index fund
+    # that day (one sale fee and one purchase fee) and both are held to the last close. Later trades are not replayed.
+    if not days or not cap or not days[0].get("pos"):
+        return None
+    d0, nav0 = days[0]["date"], float(days[0]["nav"])
+    spy = closes("SPY")
+    s0, s1 = close_on(spy, d0), (spy[-1][1] if spy else None)
+    moves, total = [], 0.0
+    for t, v in sorted(days[0]["pos"].items()):
+        excess = float(v) - cap * nav0
+        rows = closes(t)
+        p0, p1 = close_on(rows, d0), (rows[-1][1] if rows else None)
+        if excess <= 0 or not (p0 and p1 and s0 and s1):
+            continue
+        diff = excess * (s1 / s0 - p1 / p0) - 2 * FEE_PCT * excess
+        moves.append({"t": t, "excess": E.rd(excess, 2), "its_return": E.rd(p1 / p0 - 1, 4), "index_return": E.rd(s1 / s0 - 1, 4), "difference": E.rd(diff, 2)})
+        total += diff
+    return {"from": d0, "to": spy[-1][0] if spy else None, "cap": cap, "moves": moves, "difference": E.rd(total, 2),
+            "method": "On the first day of the record every holding above the limit is cut to it and the excess bought into the S&P 500 fund, paying the fee both ways; both are then held to the last close. Later trades and payments are the same as in reality."}
 
 
 def close_on(rows, day):
@@ -78,6 +108,8 @@ def run(now=None):
     days = (E.rj("state/nav_history.json", {}) or {}).get("days") or []
     dec, track, fc = E.rj("state/decisions.json", {}) or {}, E.rj("state/track.json", {}) or {}, E.rj("state/forecasts.json", {}) or {}
     health, costs = E.rj("state/health.json", {}) or {}, E.rj("state/partners/costs.json", {}) or {}
+    flog = (E.rj("state/forecasts/log.json", {}) or {}).get("entries") or []
+    first_due = min([str(x.get("due")) for x in flog if x.get("due") and x.get("o") is None] or [None])
     flows, spy = money_flows(ledger), E.read_cache("SPY")
     nav = float(snap.get("nav") or 0)
     pos = snap.get("positions") or []
@@ -119,10 +151,14 @@ def run(now=None):
                        "positions": [{"t": p.get("ticker"), "cost": E.rd(float(p.get("cost_basis") or 0), 2), "value": E.rd(float(p.get("market_value") or 0), 2),
                                       "gain": E.rd(float(p.get("market_value") or 0) - float(p.get("cost_basis") or 0), 2), "share": E.rd(float(p.get("pct_nav") or 0) / 100.0, 4)} for p in pos]},
         "against_index": alt,
+        "payments": payments(ledger),
+        "prices": {"books_as_of": snap.get("as_of"), "by_holding": dict((p.get("ticker"), p.get("price_as_of")) for p in pos)},
+        "at_cap": at_cap(days, float(((dec.get("profile") or {}).get("limits") or {}).get("stock_cap") or 0.3), E.read_cache),
         "paper_record": {"ideas_logged": track.get("count"), "first": track.get("first"), "verdict": track.get("verdict"), "three_months": three or None, "to_date": (track.get("all") or {}).get("now"),
                          "offered_to_date": (track.get("offered") or {}).get("now"), "dropped_checks": sorted((track.get("dropped") or {}).keys()), "proven_checks": track.get("proven") or [],
                          "log_unedited": track.get("intact")},
         "forecasts": {"logged": (fc.get("log") or {}).get("count"), "checked": score.get("checked"), "verdict": score.get("verdict"), "error": score.get("brier"),
+                      "first_due": first_due,
                       "error_always_50": score.get("brier_fifty"), "error_plain_base_rate": score.get("brier_plain"), "log_unedited": (fc.get("log") or {}).get("intact"),
                       "backtest": {"cases": bt.get("checked"), "error": bt.get("brier"), "error_always_50": bt.get("brier_fifty"), "error_plain_base_rate": bt.get("brier_plain"), "verdict": bt.get("verdict")}},
         "running_costs": {"entries": entries, "usd_per_month": E.rd(month, 2) if entries else None, "known": bool(entries),
@@ -131,6 +167,7 @@ def run(now=None):
         "risk": {"largest": (pf.get("largest") or {}).get("t"), "largest_share": (pf.get("largest") or {}).get("share"), "bad_year": pf.get("bad_year"), "bad_year_days": pf.get("days"),
                  "kept": pf.get("keeps") or {}, "under_high": dd, "emergency_level": -DRAWDOWN},
         "machine": {"health_checked": health.get("as_of"), "all_running": health.get("ok"), "problems": problems,
+                    "health_age_hours": E.rd((E_ts(now) - E_ts(health["as_of"])).total_seconds() / 3600.0, 1) if health.get("as_of") else None,
                     "jobs": [{"name": j.get("name"), "last_good_run": j.get("last_ok"), "late": j.get("late"), "last_result": j.get("last_result")} for j in health.get("jobs") or []],
                     "results": [{"name": d.get("name"), "as_of": d.get("as_of"), "stale": d.get("stale")} for d in health.get("data") or []],
                     "price_check": {k: (dec.get("price_check") or {}).get(k) for k in ("checked", "agree", "held", "one_source")}},

@@ -324,6 +324,19 @@ class PartnersStatement(unittest.TestCase):
                               {"action": "buy", "usd": 95, "status": "applied", "at": "2026-09-25T12:08:36Z"}]}
         self.assertEqual(P.money_flows(ledger), [("2026-09-28", -95.0)])
 
+    def test_an_undone_payment_is_not_counted(self):
+        ledger = {"entries": [{"id": "a", "action": "deposit", "usd": 365.0, "status": "applied", "at": "2026-10-13T09:35:01Z", "undone_by": "u"},
+                              {"id": "b", "action": "deposit", "usd": 364.75, "status": "applied", "at": "2026-10-13T22:51:43Z"}]}
+        self.assertEqual(P.money_flows(ledger), [("2026-10-13", 364.75)])
+        self.assertEqual([(p["id"], p["counted"]) for p in P.payments(ledger)], [("a", False), ("b", True)])
+
+    def test_the_record_at_the_limit(self):
+        # $700 of a $1,000 portfolio in one share, limit 30%: $400 moves into the index fund, which rose 10% while the share fell 10%
+        days = [{"date": "d1", "nav": 1000.0, "pos": {"AAA": 700.0}}]
+        closes = {"SPY": [("d1", 100.0), ("d2", 110.0)], "AAA": [("d1", 50.0), ("d2", 45.0)]}
+        r = P.at_cap(days, 0.3, lambda t: closes.get(t, []))
+        self.assertAlmostEqual(r["difference"], 400 * 0.2 - 2 * 0.0025 * 400, places=2)
+
 
 class TrackRecord(unittest.TestCase):
     def test_every_idea_is_logged_once_at_that_days_close(self):
