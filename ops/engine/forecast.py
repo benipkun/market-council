@@ -578,6 +578,17 @@ def plans_from(dec, by):
                     days = None
             out[t] = {"kind": "your target and review date", "target": float(k["target"]), "stop": float(stop[0]) if stop and stop[0] else None,
                       "days": max(21, min(days, 504)) if days and days > 5 else None}
+    # a holding's own order plan (ops/engine/plans.py): its stop and take-profit until its time limit
+    for p in (E.rj("state/plans.json", {}) or {}).get("holdings") or []:
+        t = p.get("ticker")
+        if t in by and t not in out and p.get("take_profit") and p.get("stop") and not p.get("kept"):
+            days = None
+            try:
+                days = int(np.busday_count(np.datetime64(str(by[t]["last"])), np.datetime64(str(p.get("until"))[:10])))
+            except Exception:
+                days = None
+            out[t] = {"kind": "your order plan's take-profit and stop", "target": float(p["take_profit"]), "stop": float(p["stop"]),
+                      "days": max(21, min(days, 504)) if days and days > 5 else None}
     for c in dec.get("cards") or []:
         t = c.get("ticker")
         if c.get("status") == "open" and t in by and t not in out and c.get("take_profit") and c.get("stop"):

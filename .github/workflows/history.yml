@@ -11,7 +11,7 @@ name: Back-checks
 on:
   push:
     branches: [main]
-    paths: ["ops/engine/history.py", "ops/engine/quant.py", ".github/workflows/history.yml"]
+    paths: ["ops/engine/history.py", "ops/engine/quant.py", "ops/engine/forecast.py", "ops/engine/track.py", "ops/engine/plans.py", ".github/workflows/history.yml"]
   schedule:
     - cron: "10 23 * * 1-5"
   workflow_dispatch:

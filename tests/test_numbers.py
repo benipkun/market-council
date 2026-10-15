@@ -20,6 +20,7 @@ import forecast as F  # noqa: E402
 import health as H  # noqa: E402
 import lab as L  # noqa: E402
 import partners as P  # noqa: E402
+import plans as PL  # noqa: E402
 import quant as Q  # noqa: E402
 import strategy as S  # noqa: E402
 import track as T  # noqa: E402
@@ -487,6 +488,49 @@ class Actions(unittest.TestCase):
         b = A.buy_one("NEW", 400.0, c)[0]
         self.assertEqual(b["shares"], 4.0)                                                        # the numbers for the amount asked
         self.assertIn("above your limit", b["flags"])
+
+
+class Plans(unittest.TestCase):
+    def setUp(self):
+        self.vol = PL.daily_vol
+        PL.daily_vol = lambda closes, n=20: 0.02                                # 2% normal daily movement
+
+    def tearDown(self):
+        PL.daily_vol = self.vol
+
+    def test_the_stop_comes_from_normal_movement_or_a_close_low(self):
+        flat = [("d%d" % i, 100.0) for i in range(30)]
+        s, why = PL.stop_level(100.0, flat, "short")
+        self.assertAlmostEqual(s, round(100 * (1 - 2 * 0.02 * math.sqrt(10)), 2), places=2)   # 87.35
+        self.assertIn("normal daily movement", why)
+        near = flat[:-3] + [("x", 86.0)] + flat[-2:]                          # a recent low close to that line
+        s2, why2 = PL.stop_level(100.0, near, "short")
+        self.assertAlmostEqual(s2, 85.14, places=2)                             # 1% under the low
+        self.assertIn("lowest close", why2)
+
+    def test_a_holding_plan_and_a_kept_one(self):
+        p = {"ticker": "AAA", "qty": 10, "last_price": 50.0, "market_value": 500.0, "cost_basis": 450.0}
+        x = PL.holding_plan(p, {}, None, "long", [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 15))
+        self.assertEqual(x["reward_risk"], 2.0)                                 # take-profit at twice the stop distance
+        self.assertTrue(any(r.startswith("Stop-loss:") and "Stop order" in r for r in x["revolut"]))
+        self.assertFalse(any(r.startswith("Buy:") for r in x["revolut"]))
+        k = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}, {"target": 80.0, "by": "2027-10-05"}, "long",
+                            [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 15))
+        self.assertEqual((k["stop"], k["take_profit"], k["until"], k["kept"]), (31.5, 80.0, "2027-10-05", True))
+
+    def test_the_trailing_rule(self):
+        p = {"id": "H:AAA", "ticker": "AAA", "price": 56.0, "stop": 45.0, "take_profit": 70.0, "average_cost": 50.0, "initial_stop": 45.0,
+             "kept": False, "until": None, "label": "long", "shares": 10, "forecast": None}
+        ev = PL.watch([p], {}, {}, datetime.date(2026, 10, 15))
+        self.assertEqual([e["type"] for e in ev], ["move"])                     # up by its first risk (5): stop to the entry
+        self.assertEqual(p["stop_should_be"], 50.0)
+
+    def test_the_stop_back_test_runs_on_prices(self):
+        x = np.array([100 * 1.004 ** i * (1 + 0.002 * (-1) ** i) for i in range(700)])
+        r = PL.backtest([{"x": x}])["rules"][0]
+        self.assertEqual(r["id"], "short")
+        self.assertAlmostEqual(r["take_profit_first"] + r["stop_first"] + r["time_limit"], 1.0, places=2)
+        self.assertGreater(r["without_plan"], 0)
 
 
 if __name__ == "__main__":

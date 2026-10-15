@@ -65,7 +65,7 @@ def read_answers():
         if not n.endswith(".json"):
             continue
         a = E.rj("answers/" + n, None)
-        if not isinstance(a, dict) or str(a.get("kind")) not in ("decision", "morning", "plan", "plan_stop", "keep", "keep_stop", "test_card"):
+        if not isinstance(a, dict) or str(a.get("kind")) not in ("decision", "morning", "plan", "plan_stop", "keep", "keep_stop", "test_card", "label"):
             continue
         at = str(a.get("at") or "")
         if not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", at):
@@ -1548,6 +1548,13 @@ def main():
         print("actions:", "; ".join("%s %s" % (a["type"], a.get("ticker") or "") for a in acts["actions"]))
     except Exception as e:
         print("actions: the action list was not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # the order plans: every holding and idea with its levels, the Forecaster's chances, Revolut's wording and the morning watch
+    try:
+        import plans as order_plans
+        pl = order_plans.run(now, out, answers, push)
+        print("plans:", len(pl["holdings"]), "holdings,", len(pl["ideas"]), "ideas,", len(pl["events"]), "events;", pl.get("push_note"))
+    except Exception as e:
+        print("plans: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     E.wj("state/paper_book.json", paper(E.rj("state/paper_book.json", None), cards, pos, snap, now))
     print("decide ok:", len([c for c in cards if c["status"] == "open"]), "open cards,", len(plans), "plans,", out["morning"]["waiting"], "questions waiting;", out["morning"].get("sent_note"))
 

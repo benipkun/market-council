@@ -938,6 +938,15 @@ def main():
         out["forecast"] = forecast.run(shares, ctx, meta, targets, limits, load, save)
     except Exception as e:
         limits.append("The Forecaster did not run (%s: %s)." % (type(e).__name__, str(e)[:120]))
+    # the order plans' stop and take-profit rules, tested on the same price history
+    try:
+        import plans
+        bt = plans.backtest(shares)
+        bt["as_of"] = out["as_of"]
+        E.wj("state/plans_backtest.json", bt)
+        out["plans_backtest"] = len(bt.get("rules") or [])
+    except Exception as e:
+        limits.append("The order-plan back-test did not run (%s: %s)." % (type(e).__name__, str(e)[:120]))
     # the live track record: every logged idea against the index fund and the average share of the list
     try:
         import track
