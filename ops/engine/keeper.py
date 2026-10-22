@@ -16,7 +16,7 @@ import urllib.request
 
 ROOT = os.environ.get("MC_ROOT", ".")
 CACHE = os.environ.get("MC_CACHE", os.path.join(ROOT, ".cache", "prices"))
-WAIT_MIN = 1                      # the Trade Inbox routine leaves questions to this answerer
+WAIT_MIN = 10                     # the Trade Inbox routine answers first with a capable model; this is the backup
 NL = "\n"
 OFFLINE_NOTE = ("The chat assistant could not answer (the AI routines are switched off on the account), so your own "
                 "system's code answered this from the action list.")

@@ -407,7 +407,47 @@ def evaluate():
     return out
 
 
+def queue_question(fid):
+    path = os.path.join(ROOT, "inbox", "queue", fid + ".md")
+    with open(path, encoding="utf-8") as f:
+        for ln in f.read().split("\n"):
+            s = ln.strip()
+            if s and not s.startswith("#"):
+                return path, (s[4:].strip() if s.lower().startswith("ask:") else s)
+    return path, ""
+
+
+def finish(fid, facts_path, answer_path):
+    # used by the Trade Inbox routine: check its answer against the facts it was given, then record it
+    with open(facts_path, encoding="utf-8") as f:
+        facts = json.load(f)
+    with open(answer_path, encoding="utf-8") as f:
+        ans = parse(f.read())
+    errs = check(ans, facts)
+    if errs:
+        print("FAILED: " + "; ".join(errs))
+        return 2
+    path, q = queue_question(fid)
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    msgs = rj("state/messages.json", {"messages": [], "notified_picks": {}}) or {"messages": [], "notified_picks": {}}
+    msgs["messages"] = ((msgs.get("messages") or []) + [
+        {"id": fid, "at": now, "from": "ben", "text": q, "via": "ntfy" if "-ntfy-" in fid else "app", "reply_to": None, "status": None},
+        {"id": fid + "-r", "at": now, "from": "council", "text": render(ans), "via": None, "reply_to": fid, "status": "answered", "model": "claude (Trade Inbox routine)", "note": None}])[-200:]
+    wj("state/messages.json", msgs)
+    wj("outbox/queue/%s-reply.json" % now.replace("-", "").replace(":", ""), {"title": "Market Council reply", "message": "Your answer is ready in the app.",
+                                                                               "click": "https://benipkun.github.io/market-council/#chat", "tags": []})
+    os.remove(path)
+    print("answered")
+    return 0
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "facts":
+        f, _ = gather(" ".join(sys.argv[2:]))
+        print(json.dumps(f, ensure_ascii=False, indent=1))
+        sys.exit(0)
+    if len(sys.argv) > 4 and sys.argv[1] == "finish":
+        sys.exit(finish(sys.argv[2], sys.argv[3], sys.argv[4]))
     if len(sys.argv) > 1 and sys.argv[1] == "eval":
         o = evaluate()
         print("questions: %d of %d passed; models used: %s" % (o["passed"], o["of"], ", ".join(sorted(set(x["model"] for x in o["rows"])))))
