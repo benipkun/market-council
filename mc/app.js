@@ -43,8 +43,11 @@ function slot(name,arg,fallback){var f=SL[name];if(f){try{var h=f(arg);if(h)retu
 function sources(){
 var di=((S.status&&S.status.data_issues)||[]).map(String),bt=S.status&&S.status.books_ran_at,dg=S.digest&&S.digest.as_of,out=[];
 function issue(n){return di.filter(function(x){return x.toLowerCase().indexOf(n.toLowerCase())===0;})[0];}
-[["Twelve Data","live quotes and exchange rates"],["Alpha Vantage","backup quotes, news, insider trades (25 calls a day)"],["MNB","official forint rate for tax"]].forEach(function(c){
-var is=issue(c[0]);out.push({n:c[0],use:c[1],ok:!is&&!!bt,at:bt,note:is?is.slice(is.indexOf(":")+1).trim():"no problem reported at the last bookkeeping run",fix:c[0]==="MNB"?"net":"conn"});});
+var fxr=((S.fx&&S.fx.rates)||[]),fxl=fxr[fxr.length-1]||{},fresh=!!bt&&wkH(bt)<=30;
+[["Twelve Data","live quotes and exchange rates"],["Alpha Vantage","backup quotes, news, insider trades (25 calls a day)"]].forEach(function(c){
+var is=issue(c[0]);out.push({n:c[0],use:c[1],ok:!is&&fresh,at:bt,note:is?is.slice(is.indexOf(":")+1).trim():(fresh?"no problem reported at the last bookkeeping run":"used by the bookkeeping routine, which has not run since "+String(bt||"").slice(0,10)),fix:"conn"});});
+var mnb=String(fxl.source||"").indexOf("MNB")===0&&wkH(String(fxl.date||"")+"T12:00:00Z")<=48;
+out.push({n:"MNB",use:"official forint rate for tax",ok:mnb,at:fxl.date,note:mnb?"official rate of "+fxl.date+", fetched by the engine":"latest rate "+(fxl.date||"none")+" from "+(fxl.source||"no source"),fix:"net"});
 var tech=(S.digest&&S.digest.technicals)||{},fmp=Object.keys(tech).some(function(k){return String(tech[k].fair_value_method||"").indexOf("FMP")>=0;});
 out.push({n:"FMP",use:"company statements and fair values (large companies only on your plan)",ok:fmp&&wkH(dg)<=30,at:dg,note:fmp?"used in the latest pipeline run":"not used in the latest pipeline run",fix:"conn"});
 out.push({n:"News search",use:"headlines for every watched company",ok:!!dg&&wkH(dg)<=9,at:dg,note:"read by the pipeline's News Reader",fix:""});

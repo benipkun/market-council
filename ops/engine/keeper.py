@@ -80,6 +80,27 @@ def remark(snap, closes, now):
     return changed
 
 
+def mnb_rates():
+    # the Hungarian central bank's official rates (the ones used for Hungarian tax), from its public web service
+    body = ('<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" '
+            'xmlns:web="http://www.mnb.hu/webservices/"><soap:Body><web:GetCurrentExchangeRates/></soap:Body></soap:Envelope>')
+    last = None
+    for url in ("https://www.mnb.hu/arfolyamok.asmx", "http://www.mnb.hu/arfolyamok.asmx"):
+        try:
+            req = urllib.request.Request(url, data=body.encode("utf-8"), headers={"Content-Type": "text/xml; charset=utf-8", "User-Agent": "market-council",
+                                         "SOAPAction": "http://www.mnb.hu/webservices/MNBArfolyamServiceSoap/GetCurrentExchangeRates"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                x = r.read().decode("utf-8", "replace").replace("&lt;", "<").replace("&gt;", ">")
+            day = re.search(r'Day date="(\d{4}-\d\d-\d\d)"', x)
+            usd = re.search(r'curr="USD">([\d.,]+)<', x)
+            eur = re.search(r'curr="EUR">([\d.,]+)<', x)
+            if day and usd and eur:
+                return {"date": day.group(1), "usd_huf": float(usd.group(1).replace(",", ".")), "eur_huf": float(eur.group(1).replace(",", ".")), "source": "MNB"}
+        except Exception as e:
+            last = e
+    raise last or ValueError("no MNB rates in the answer")
+
+
 def ecb_rates():
     # the European Central Bank's daily reference rates (through frankfurter.app, free and keyless)
     def get(base):
@@ -104,15 +125,23 @@ def books(now):
     fx = rj("state/fx.json", {"rates": []}) or {"rates": []}
     rates = fx.get("rates") or []
     if not rates or rates[-1].get("date", "") < now[:10]:
-        try:
-            r = ecb_rates()
-            if not rates or r["date"] > rates[-1].get("date", ""):
-                rates.append(r)
-                fx["rates"] = rates[-400:]
-                wj("state/fx.json", fx)
-                out.append("exchange rate added for %s" % r["date"])
-        except Exception as e:
-            out.append("exchange rate not fetched (%s)" % type(e).__name__)
+        r, why = None, []
+        for src in (mnb_rates, ecb_rates):
+            try:
+                r = src()
+                break
+            except Exception as e:
+                why.append("%s: %s" % (src.__name__.split("_")[0].upper(), type(e).__name__))
+        if r and (not rates or r["date"] > rates[-1].get("date", "")):
+            rates.append(r)
+            fx["rates"] = rates[-400:]
+            wj("state/fx.json", fx)
+            out.append("exchange rate added for %s from %s" % (r["date"], r["source"]))
+        fx = rj("state/fx.json", fx) or fx
+        fx["checked"] = {"at": now, "source": r["source"] if r else None, "problems": why}
+        wj("state/fx.json", fx)
+        if why:
+            out.append("rate sources that failed: " + ", ".join(why))
     return out
 
 
