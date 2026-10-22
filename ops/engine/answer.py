@@ -217,6 +217,53 @@ def topic_answer(q, facts):
         line = facts["partners_bottom_line"]
         return {"answer": ("No: " if "behind" in line else "Yes: ") + line.split(". ")[1].rstrip(".") + "." if ". " in line else line,
                 "why": [line.split(". ")[0] + "."], "would_change": "The next weeks of results; the record is still short.", "evidence": "Real money against the same money in the index fund, from your ledger."}
+    books = facts.get("books") or {}
+    held = dict((p.get("ticker"), p) for p in books.get("positions") or [])
+    nav, cash = float(books.get("value") or 0), float(books.get("cash") or 0)
+    known = set(held) | set(facts.get("prices") or {}) | set(facts.get("fair_values") or {})
+    t = next((w.upper() for w in re.findall(r"[A-Za-z]{2,6}", q) if w.upper() in known), None)
+    pct_m = re.search(r"(\d+(?:\.\d+)?)\s*%", q)
+    if t in held and pct_m and any(w in s for w in ("fall", "drop", "down", "crash", "lose")):
+        x, pos = float(pct_m.group(1)) / 100.0, held[t]
+        loss = float(pos.get("value") or 0) * x
+        return {"answer": "You would lose about $%.2f, %.1f%% of your portfolio." % (loss, 100 * loss / nav if nav else 0),
+                "why": ["%s is worth $%.2f, %d%% of the portfolio; %d%% of that is $%.2f." % (t, float(pos.get("value") or 0), round(100 * (pos.get("weight") or 0)), round(100 * x), loss),
+                        "Your portfolio would go from $%.2f to $%.2f." % (nav, nav - loss)],
+                "would_change": "Selling part of %s first, or adding money to other holdings." % t, "evidence": "Arithmetic on your books at the last price."}
+    num_m = re.search(r"\$?(\d+(?:\.\d+)?)", q)
+    if t and ("reach" in s or "hit " in s or "get to" in s) and num_m:
+        level, keep = float(num_m.group(1)), (facts.get("standing_decisions") or {}).get(t) or {}
+        if keep.get("target") and abs(level - float(keep["target"])) <= 0.01 * float(keep["target"]) and keep.get("chance_touch") is not None:
+            return {"answer": "Probably: about %d%% that %s touches $%.2f before %s." % (round(100 * keep["chance_touch"]), t, level, keep.get("by")),
+                    "why": ["It needs to rise %d%% from today's $%.2f." % (round(100 * (keep.get("to_target") or 0)), float(keep.get("price") or 0)),
+                            "The chance it is still above $%.2f on %s is lower: %d%%." % (level, keep.get("by"), round(100 * (keep.get("chance_above_on_date") or 0)))],
+                    "would_change": "A big move either way before %s, or a change in its yearly volatility." % keep.get("by"), "evidence": "A model estimate from one year of price moves (%s)." % (keep.get("method") or "random-walk model")[:80]}
+        up = ((facts.get("forecasts") or {}).get(t) or {}).get("1y", {}).get("up")
+        if up is not None:
+            return {"answer": "No figure for exactly $%.2f; the Forecaster gives %d%% that %s is higher in a year." % (level, round(100 * up), t), "why": ["That is the closest forecast on record."],
+                    "would_change": "A plan with $%.2f as its take-profit gets its own forecast the next night." % level, "evidence": "A model estimate from price history."}
+    if "cash" in s and ("keep" in s or "how much" in s or "hold" in s):
+        mc = float(((facts.get("risk_profile") or {}).get("limits") or {}).get("min_cash") or 0.03)
+        return {"answer": "Keep at least $%.2f in cash (%d%% of the portfolio); you have $%.2f, so $%.2f is free to invest." % (mc * nav, round(100 * mc), cash, max(0.0, cash - mc * nav)),
+                "why": ["Your risk profile keeps %d%% of the portfolio as cash; the portfolio is $%.2f." % (round(100 * mc), nav)],
+                "would_change": "A change of your risk profile, or a deposit or withdrawal.", "evidence": "Your own rule, applied to your books."}
+    cards = facts.get("idea_cards") or []
+    if t in held and "buy" in s and not any(c.get("ticker") == t for c in cards):
+        fv, f1 = (facts.get("fair_values") or {}).get(t) or {}, ((facts.get("forecasts") or {}).get(t) or {}).get("1y") or {}
+        why = ["You already hold $%.2f of it, %d%% of the portfolio." % (float(held[t].get("value") or 0), round(100 * (held[t].get("weight") or 0)))]
+        if fv.get("fair") is not None:
+            why.append("Our fair value is $%.2f against a price of $%.2f." % (float(fv["fair"]), float(held[t].get("price") or 0)))
+        if f1.get("beat") is not None:
+            why.append("The Forecaster gives it %d%% to beat the index fund over a year." % round(100 * f1["beat"]))
+        return {"answer": "No, not a buy now: none of your rules has raised a buy for %s." % t, "why": why, "would_change": "A card for %s that beats the index fund after fees." % t,
+                "evidence": "Your written rules and our own valuation; the checks are unproven so far."}
+    if t and t not in held and ("swap" in s or "sell" in s):
+        return {"answer": "You don't hold %s, so there is nothing to swap." % t, "why": ["Your holdings are %s." % ", ".join(sorted(held))],
+                "would_change": "Buying %s first." % t, "evidence": "Your books."}
+    if s.startswith("why") and ("no trade" in s or "nothing" in s or "no buy" in s):
+        lines = (facts.get("system_answer") or {}).get("lines") or [""]
+        return {"answer": "Because no idea beats the same money in the index fund after fees right now.", "why": [x.strip() for x in lines[0].replace("HOLD: do nothing today. ", "").split("; ")[:3] if x.strip()],
+                "would_change": "An idea whose expected result after fees beats the index fund.", "evidence": "The action list's own rule; the checks behind ideas are unproven so far."}
     if "risk" in s:
         pos = sorted((facts.get("books") or {}).get("positions") or [], key=lambda x: -(x.get("weight") or 0))
         if pos and pos[0].get("weight") is not None:
@@ -241,7 +288,7 @@ def code_answer(sys_ans, facts):
     elif typ == "HOLD":
         first = "No trade now: " + (a.get("reason") or line.replace("HOLD: ", "")).split(". ")[0].rstrip(".") + "."
     else:
-        first = "Yes: " + line.split(". Stop")[0].rstrip(".") + "."
+        first = "Yes: " + line.split(": ")[0].split(". Stop")[0].rstrip(".") + "."
     why = []
     fc = a.get("forecast") or {}
     if a.get("expected_usd") is not None and a.get("index_usd") is not None:
