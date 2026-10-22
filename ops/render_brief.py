@@ -235,6 +235,14 @@ def main():
     news = [p for p in picks if p.get("signal_type") not in MIS]
     mis = [p for p in picks if p.get("signal_type") in MIS]
     issues = [str(x) for x in arr(status.get("data_issues"))]
+    # The hourly news reader (a Claude routine) can be offline; prices, values and the desk come from the engine every run.
+    assets = obj(obj(load("state/quant.json")).get("assets"))
+    valued = [obj(c) for c in arr(obj(load("research/cards/index.json")).get("cards"))]
+    dig_at = parse(dig.get("as_of"))
+    offline = dig_at is None or (now - dig_at).total_seconds() > 30 * 3600
+    last_px = max((str(obj(a).get("last_date") or "") for a in assets.values()), default="")
+    off_note = ('<p class="empty">The hourly news reader has not run since {}, so there are no new picks or headlines from it. '
+                'Prices, fair values and the action list in this brief are fresh from the engine.</p>').format(when(dig.get("as_of")) if dig_at else "it started")
     th = next((obj(x) for x in arr(theses.get("theses")) if obj(x).get("status") != "done"), None)
     totals = obj(paper.get("totals"))
     sections = []
@@ -301,12 +309,30 @@ def main():
         sections.append(("desk", "Decision desk", body, ""))
 
     # 2 and 3. Picks
-    if news:
+    if offline:
+        news, mis = [], []
+    if offline:
+        body = off_note
+    elif news:
         body = "".join(pick_card(p, tech) for p in news)
     else:
         body = '<p class="empty">Nothing news-driven cleared the bar this cycle. That is the normal state.</p>'
     sections.append(("attention", "Needs attention", body, ""))
     body = "".join(pick_card(p, tech) for p in mis) if mis else '<p class="empty">No valuation gap cleared the bar this cycle.</p>'
+    if offline:
+        # from our own valuation (the engine's research cards): price at least 20% away from our fair value
+        rows = ""
+        for c in sorted(valued, key=lambda c: -abs(num(c.get("mos")) or 0)):
+            px, fair, mos = num(obj(assets.get(c.get("t"))).get("last")), num(c.get("fair")), num(c.get("mos"))
+            if px is None or fair is None or mos is None or abs(mos) < 0.20:
+                continue
+            fr = obj(c.get("fair_range"))
+            rows += '<tr><td><b>{}</b> {}</td><td class="r mono">{}</td><td class="r mono">{}</td><td class="r {}">{}</td><td>{}</td></tr>'.format(
+                e(c.get("t")), e(c.get("name") or ""), usd(px), usd(fair), "up" if mos >= 0 else "dn", pct(100 * mos),
+                "range {} to {}".format(usd(fr.get("low")), usd(fr.get("high"))) if fr.get("low") is not None else "")
+        body = ('<div class="tw"><table><thead><tr><th>Share</th><th class="r">Price</th><th class="r">Our fair value</th><th class="r">Gap</th><th>Across assumptions</th></tr></thead>'
+                '<tbody>{}</tbody></table></div><p class="note">Our own valuation from company statements; a gap of 20% or more either way. A wide range means the value is unclear.</p>').format(rows) if rows else \
+            '<p class="empty">No share is 20% or more away from our own fair value.</p>'
     sections.append(("mispriced", "Mispriced", body, ""))
 
     # 4. Idea tracker
@@ -382,6 +408,24 @@ def main():
             "" if rel is None else ("up" if rel >= 0 else "dn"), pct(rel),
             "{:.0f}".format(num(t.get("rsi14"))) if num(t.get("rsi14")) is not None else "&mdash;",
             day(t.get("next_earnings_date")) if t.get("next_earnings_date") else "&mdash;")
+    if offline:
+        rows = ""
+        held = set(str(obj(x).get("ticker")) for x in arr(obj(load("treasury/snapshot.json")).get("positions")))
+        watch = [str(obj(x).get("ticker") if isinstance(x, dict) else x) for x in arr(obj(load("state/known_companies.json")).get("tickers"))]
+        for k in sorted(set(watch) | held, key=lambda s: (s not in held, s)):
+            a = obj(assets.get(k))
+            if not a:
+                continue
+            rows += '<tr><td><b>{}</b>{}</td><td class="r mono">{}</td><td class="r {}">{}</td><td class="r {}">{}</td><td class="r">{}</td></tr>'.format(
+                e(k), " " + tag("held") if k in held else "", usd(a.get("last")),
+                "up" if (num(a.get("ret_1D")) or 0) >= 0 else "dn", pct(100 * num(a.get("ret_1D"))) if num(a.get("ret_1D")) is not None else "&mdash;",
+                "up" if (num(a.get("ret_1M")) or 0) >= 0 else "dn", pct(100 * num(a.get("ret_1M"))) if num(a.get("ret_1M")) is not None else "&mdash;",
+                pct(100 * num(a.get("from_high_1y"))) if num(a.get("from_high_1y")) is not None else "&mdash;")
+        if rows:
+            body = ('<div class="tw"><table><thead><tr><th>Ticker</th><th class="r">Price</th><th class="r">1 day</th><th class="r">1 month</th><th class="r">From 1-year high</th></tr></thead>'
+                    '<tbody>{}</tbody></table></div><p class="note">Closing prices of {} from the engine.</p>').format(rows, e(last_px))
+            sections.append(("watch", "Watchlist", body, ""))
+            rows = ""
     if rows:
         body = ('<div class="tw"><table><thead><tr><th>Ticker</th><th class="r">Price</th><th class="r">vs 50-day</th>'
                 '<th class="r">RSI</th><th>Earnings</th></tr></thead><tbody>{}</tbody></table></div>'
@@ -390,7 +434,9 @@ def main():
 
     # 7. Headlines
     scrap = sorted((obj(x) for x in arr(dig.get("scrap"))), key=lambda x: str(x.get("first_seen")), reverse=True)[:12]
-    if scrap:
+    if offline:
+        sections.append(("news", "Latest headlines", off_note, ""))
+    elif scrap:
         body = "".join('<div class="ev"><div class="d">{}</div><div><b>{}</b> {}</div></div>'.format(
             day(x.get("first_seen")), e(x.get("ticker")), e(x.get("headline"))) for x in scrap)
         sections.append(("news", "Latest headlines", body, ""))
@@ -427,7 +473,8 @@ def main():
     nav = "".join('<a href="#{}">{}</a>'.format(sid, title) for sid, title, _, _ in sections)
     secs = "".join('<section id="{}" class="{}"><h2><span class="n">{}</span>{}</h2>{}</section>'.format(
         sid, cls, i + 1, title, body) for i, (sid, title, body, cls) in enumerate(sections))
-    page = TEMPLATE.replace("@UPDATED@", when(now.isoformat())).replace("@PIPE@", when(dig.get("as_of")))
+    pipe = ("prices of {} (engine); news reader offline since {}".format(last_px, when(dig.get("as_of")))) if offline else when(dig.get("as_of"))
+    page = TEMPLATE.replace("@UPDATED@", when(now.isoformat())).replace("@PIPE@", pipe)
     page = page.replace("@NAV@", nav).replace("@SECTIONS@", secs)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8", newline="") as f:

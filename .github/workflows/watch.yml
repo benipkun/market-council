@@ -46,7 +46,8 @@ jobs:
             exec 3>&1 >/tmp/git.txt 2>&1
             git config user.name "Market Council Engine"
             git config user.email "engine@market-council.local"
-            git add -A state/health.json state/logs/health.txt outbox inbox/queue state/messages.json state/keeper.json
+            # inbox, not inbox/queue: an empty queue folder does not exist in git, and adding a missing path fails the step
+            git add -A state/health.json state/logs/health.txt outbox inbox state/messages.json state/keeper.json
             if ! git diff --cached --quiet; then
               git commit -q -m "Health check $(date -u +%Y-%m-%dT%H:%MZ)"
               git reset -q --hard HEAD
