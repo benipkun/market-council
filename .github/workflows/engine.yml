@@ -81,14 +81,15 @@ jobs:
           QUICK: ${{ github.event.inputs.quick }}
         run: |
           mkdir -p state/logs
-          FILES="engine research decide"
+          FILES="engine books research decide asks"
           if [ "$QUICK" = "1" ] && [ -f state/quant.json ] && [ -f state/lab.json ]; then
             echo "Only answers changed: running the decision desk alone."
-            FILES="decide"
+            FILES="decide asks"
             export MC_QUICK=1
           fi
           for n in $FILES; do
-            if python "ops/engine/$n.py" > "/tmp/$n.txt" 2>&1; then echo "$n: ok"; else echo "$n: FAILED (details in the private records, state/logs/$n.txt)"; echo "$n" >> /tmp/failed; fi
+            case "$n" in books|asks) cmd="ops/engine/keeper.py $n";; *) cmd="ops/engine/$n.py";; esac
+            if python $cmd > "/tmp/$n.txt" 2>&1; then echo "$n: ok"; else echo "$n: FAILED (details in the private records, state/logs/$n.txt)"; echo "$n" >> /tmp/failed; fi
             { date -u +%Y-%m-%dT%H:%MZ; cat "/tmp/$n.txt"; } > "state/logs/$n.txt"
           done
           # Rebuild the daily brief from the fresh results, so the brief and the app always show the same desk.
@@ -101,7 +102,7 @@ jobs:
           say() { echo "$1" >&3; }
           git config user.name "Market Council Engine"
           git config user.email "engine@market-council.local"
-          git add -A state research brief outbox ops/engine/actions.py
+          git add -A state research brief outbox inbox/queue treasury/snapshot.json ops/engine/actions.py ops/engine/keeper.py
           if git diff --cached --quiet; then say "Nothing changed."; else
             git commit -q -m "Engine: results $(date -u +%Y-%m-%dT%H:%MZ)"
             # Only state/, research/, brief/, phone messages (outbox/) and the action-list script the inbox routine runs are saved. Drop anything else the run touched, or git refuses to replay the commit on newer records.

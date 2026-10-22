@@ -35,15 +35,18 @@ jobs:
           NTFY_OUT: ${{ secrets.NTFY_OUT }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p ops state/logs && cp _code/ops/health.py ops/
+          mkdir -p ops/engine state/logs && cp _code/ops/health.py ops/ && cp _code/ops/engine/actions.py _code/ops/engine/keeper.py ops/engine/
           if python3 ops/health.py > /tmp/health.txt 2>&1; then echo "health: checked"; else echo "health: FAILED (details in the private records, state/logs/health.txt)"; echo health >> /tmp/failed; fi
-          if [ -s /tmp/failed ] || [ -n "$(git status --porcelain state/health.json outbox)" ]; then
+          # questions the Trade Inbox has not answered within 20 minutes are answered by the action list's own code
+          python3 ops/engine/keeper.py asks > /tmp/keeper.txt 2>&1 || echo "keeper: FAILED" >> /tmp/keeper.txt
+          echo "keeper: ran"
+          if [ -s /tmp/failed ] || [ -n "$(git status --porcelain state/health.json outbox inbox/queue state/messages.json)" ]; then
             { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/health.txt; } > state/logs/health.txt
             # Git's own messages can name files, so they stay out of this public log.
             exec 3>&1 >/tmp/git.txt 2>&1
             git config user.name "Market Council Engine"
             git config user.email "engine@market-council.local"
-            git add -A state/health.json state/logs/health.txt outbox
+            git add -A state/health.json state/logs/health.txt outbox inbox/queue state/messages.json state/keeper.json
             if ! git diff --cached --quiet; then
               git commit -q -m "Health check $(date -u +%Y-%m-%dT%H:%MZ)"
               git reset -q --hard HEAD

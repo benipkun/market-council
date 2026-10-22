@@ -21,6 +21,7 @@ import health as H  # noqa: E402
 import lab as L  # noqa: E402
 import partners as P  # noqa: E402
 import plans as PL  # noqa: E402
+import keeper as K  # noqa: E402
 import quant as Q  # noqa: E402
 import strategy as S  # noqa: E402
 import track as T  # noqa: E402
@@ -479,7 +480,8 @@ class Actions(unittest.TestCase):
         self.assertAlmostEqual(A.parse("100000 Ft", c)[1], 303.03, places=2)
         self.assertEqual(A.parse("What should I do with $500?", c), ("amount", 500.0))
         self.assertEqual(A.parse("Should I sell uber?", c), ("sell", "UBER"))
-        self.assertEqual(A.parse("How much NEW should I buy?", c), ("buy", ("NEW", None)))
+        self.assertEqual(A.parse("How much NEW should I buy?", c), ("buy", ("NEW", None, None)))
+        self.assertEqual(A.parse("I am going to buy NEW at 152", c), ("buy", ("NEW", None, 152.0)))   # a price, not an amount
 
     def test_one_idea_at_the_limit_and_above_it(self):
         c = self.ctx()
@@ -488,6 +490,18 @@ class Actions(unittest.TestCase):
         b = A.buy_one("NEW", 400.0, c)[0]
         self.assertEqual(b["shares"], 4.0)                                                        # the numbers for the amount asked
         self.assertIn("above your limit", b["flags"])
+
+
+class Keeper(unittest.TestCase):
+    def test_books_follow_the_latest_close_and_cash_is_untouched(self):
+        snap = {"cash": 100.0, "positions": [{"ticker": "AAA", "qty": 2, "last_price": 50.0, "market_value": 100.0, "price_as_of": "2026-10-15T20:00:00Z"}]}
+        changed = K.remark(snap, {"AAA": ("2026-10-21", 55.0)}, "2026-10-22T08:00:00Z")
+        self.assertEqual(changed, ["AAA"])
+        self.assertEqual((snap["positions"][0]["market_value"], snap["cash"], snap["nav"]), (110.0, 100.0, 210.0))
+        self.assertEqual(K.remark(snap, {"AAA": ("2026-10-20", 60.0)}, "2026-10-22T09:00:00Z"), [])   # an older close never overwrites a newer price
+
+    def test_the_command_line_of_a_queue_file(self):
+        self.assertEqual(K.command("# note" + chr(10) + chr(10) + "ask: Good or bad?" + chr(10) + "why: x"), "ask: Good or bad?")
 
 
 class Plans(unittest.TestCase):
