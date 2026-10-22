@@ -36,7 +36,8 @@ jobs:
           exec 3>&1 >/tmp/git.txt 2>&1
           git config user.name "Market Council Engine"
           git config user.email "engine@market-council.local"
-          git add -A state/questions_eval.json state/logs/questions.txt state/agents || true
+          # add each path only if it exists: one missing path makes git add nothing at all
+          for f in state/questions_eval.json state/logs/questions.txt state/agents; do [ -e "$f" ] && git add -A "$f"; done
           if ! git diff --cached --quiet; then
             git commit -q -m "Question tests $(date -u +%Y-%m-%dT%H:%MZ)"
             for i in 1 2 3; do
