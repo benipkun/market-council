@@ -9,9 +9,11 @@ expected result after fees:
 
     expected result = amount x (P(take-profit first) x gain at take-profit - P(stop first) x loss at stop) - fees both ways
 
-An idea only becomes a BUY when that figure beats what the same money is expected to earn in the index fund over the
-same time (the engine's index assumption, after the same fees), and the Forecaster does not rate it below an even
-chance of beating the index fund. When nothing qualifies the top action is HOLD, with the reason.
+Rule of 23 Oct 2026 (Ben): ideas that beat the same money in the index fund over the same time (the engine's index
+assumption, after the same fees, with the Forecaster not below an even chance of beating it) always come first. An
+idea that is expected to make money after fees is a BUY too, at the size the risk profile allows, labelled as
+trailing the index fund. A holding is only sold to pay for an index-beating idea. When nothing is expected to make
+money after fees, the top action is HOLD, with the reason.
 
 The decision desk runs it after every cycle and writes state/actions.json. The inbox routine and the app ask it
 questions:
@@ -191,21 +193,43 @@ def candidates(ctx):
     return out
 
 
-def qualifies(x):
-    # a BUY only when it is expected to do better than the same money in the index fund, and the Forecaster does not
-    # give it less than an even chance of beating the index fund
+def beats_index(x):
+    # expected to do better than the same money in the index fund, and the Forecaster does not rate it below an even chance
     beat = (x["fc"] or {}).get("beat_index")
-    return not x["held_back"] and x["edge"] is not None and x["edge"] > x["index_edge"] and not (beat is not None and beat < 0.5)
+    return x["edge"] is not None and x["edge"] > x["index_edge"] and not (beat is not None and beat < 0.5)
+
+
+def qualifies(x):
+    # Rule of 23 Oct 2026 (Ben): ideas that beat the index fund always come first; an idea expected to make money after
+    # fees is a BUY too, labelled as trailing the index fund. Held-back ideas (stale data, no forecast, failed price
+    # check) never qualify.
+    return not x["held_back"] and x["edge"] is not None and x["edge"] > 0
+
+
+def tier(x):
+    return 1 if beats_index(x) else 2
+
+
+def mark_tier(a, x):
+    # tier 1 beats the index fund; tier 2 makes money but trails it, and says so on the line
+    a["tier"] = 1 if (tier(x) == 1 and (a.get("expected_usd") or 0) > (a.get("index_usd") or 0)) else 2
+    if a["tier"] == 2:
+        a["flags"].append("trails the index fund")
+        a["line"] += " Makes money but trails the index fund: expected %s$%s against %s$%s for the same money in the index fund." % (
+            "+" if (a.get("expected_usd") or 0) >= 0 else "-", money(abs(a.get("expected_usd") or 0)), "+" if (a.get("index_usd") or 0) >= 0 else "-", money(abs(a.get("index_usd") or 0)))
+    return a
 
 
 def reason(x):
     # the first reason an idea is not a BUY
     if x["held_back"]:
         r = x["held_back"][0]
-    elif x["edge"] is not None and x["edge"] <= x["index_edge"]:
+    elif x["edge"] is not None and x["edge"] <= 0:
         r = x["vs_index"]
+    elif x["edge"] is not None:
+        r = "the fees take its expected gain at the size allowed (" + str(x["vs_index"]) + ")"
     else:
-        r = (x["disagree"] or ["its expected result after fees does not beat the index fund"])[0]
+        r = (x["disagree"] or ["no forecast for it yet"])[0]
     r = str(r)
     if r.startswith(NOT_A_BUY):
         r = r[len(NOT_A_BUY):]
@@ -342,19 +366,20 @@ def number(acts):
 
 def today(ctx):
     cands = candidates(ctx)
-    good = sorted([x for x in cands if qualifies(x)], key=lambda x: -(x["edge"] or 0))
+    good = sorted([x for x in cands if qualifies(x)], key=lambda x: (tier(x), -(x["edge"] or 0)))
     acts, cash = [], ctx["free_cash"]
     for x in good:
-        a = swap_line(x, ctx) if x["fund_sell"] else None
+        # a holding is only sold to pay for an idea that beats the index fund
+        a = swap_line(x, ctx) if (x["fund_sell"] and tier(x) == 1) else None
         if not a:
             usd = min(x["cap"], cash) if cash >= MIN_ORDER else x["cap"]
             pays = "free cash" if cash >= MIN_ORDER else ("new money: the next monthly %s HUF" % "{:,.0f}".format(ctx["monthly_huf"]) if ctx["monthly_huf"] else "new money")
             a = buy_line(x, usd, ctx, pays)
             if a and pays == "free cash":
                 cash -= a["usd"] + a["fees"]
-        if a and a["expected_usd"] is not None and a["expected_usd"] > (a.get("index_usd") or 0):
-            acts.append(a)
-    acts.sort(key=lambda a: -(a["expected_usd"] or 0))
+        if a and a["expected_usd"] is not None and a["expected_usd"] > 0:
+            acts.append(mark_tier(a, x))
+    acts.sort(key=lambda a: (a.get("tier", 2), -(a["expected_usd"] or 0)))
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx), ctx))
     acts += [hold_keep(t, ctx) for t in sorted(ctx["keeps"]) if t in ctx["hold"]]
@@ -391,22 +416,22 @@ def why_nothing(cands, ctx):
     if not cands:
         return "There is no open idea card, so nothing beats what you hold or the index fund after fees."
     parts = ["%s: %s" % (x["t"], reason(x)) for x in cands[:6]]
-    return "No idea beats holding or the index fund after fees. " + "; ".join(parts) + "."
+    return "No idea is expected to make money after fees. " + "; ".join(parts) + "."
 
 
 def plan_amount(usd, ctx, label=None):
     # spread an amount of new money over the ideas that qualify, best expected result first, each at most what the risk
     # profile allows for one idea; whatever is left goes to the index fund, the yardstick everything is measured against
     cands = candidates(ctx)
-    good = sorted([x for x in cands if qualifies(x)], key=lambda x: -(x["edge"] or 0))
+    good = sorted([x for x in cands if qualifies(x)], key=lambda x: (tier(x), -(x["edge"] or 0)))
     acts, left = [], usd
     for x in good:
         put = min(x["cap"], left)
         if put < max(MIN_ORDER, x["limit"] if x["limit"] < 1000 else MIN_ORDER):
             continue
         a = buy_line(x, put, ctx, "the new money")
-        if a and a["expected_usd"] is not None and a["expected_usd"] > (a.get("index_usd") or 0):
-            acts.append(a)
+        if a and a["expected_usd"] is not None and a["expected_usd"] > 0:
+            acts.append(mark_tier(a, x))
             left -= a["usd"] + a["fees"]
     whole = not acts
     if left >= MIN_ORDER and ctx.get("spy"):
@@ -536,6 +561,11 @@ def buy_one(t, usd, ctx, price=None):
     a = buy_line(x, usd, ctx, pays)
     if not a:
         return number([hold_top("The amount is too small for one share of %s at $%.2f." % (t, x["limit"]), ctx)])
+    if (a.get("expected_usd") or 0) <= 0:
+        h = hold_top("Do not buy %s now: the fees take its expected gain at this size (expected %s$%s after fees)." % (t, "+" if (a.get("expected_usd") or 0) >= 0 else "-", money(abs(a.get("expected_usd") or 0))), ctx)
+        h["line"] = "HOLD: do not buy %s now. The fees take its expected gain at this size.%s" % (t, named)
+        return number([dict(h, ticker=t, evidence=x["evidence"], forecast=x["fc"])])
+    mark_tier(a, x)
     a["line"] += named
     if usd > x["cap"] + 0.01:
         a["flags"].append("above your limit")

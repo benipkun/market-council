@@ -437,15 +437,18 @@ class Actions(unittest.TestCase):
         self.assertEqual([(x["type"], x.get("ticker")) for x in acts], [("BUY", "NEW"), ("BUY", "SPY"), ("HOLD", None)])
         self.assertEqual(acts[1]["shares"], 4.0)                                # $200.79 after the fee buys four $50 shares
 
-    def test_an_idea_must_beat_the_index_fund_not_just_zero(self):
+    def test_an_idea_that_makes_money_but_trails_the_index_is_a_labelled_buy(self):
         # a year-long plan: 40% take-profit (+16%) first, 30% stop (-8%) first gives +4.0%, below the index fund's 8.61%
         c = self.ctx()
         c["fct"]["NEW"]["h"]["by"]["due"] = "2027-10-14"
-        acts, cands = A.today(c)
         c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.4
         acts, cands = A.today(c)
+        self.assertEqual((acts[0]["type"], acts[0]["ticker"], acts[0]["tier"]), ("BUY", "NEW", 2))   # not a swap: holdings are sold only for index-beaters
+        self.assertIn("trails the index fund", acts[0]["flags"])
+        self.assertAlmostEqual(acts[0]["expected_usd"], 1.76, places=2)                            # 100 x 4% - 2 x $1.12
+        c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.1                                       # 1.6% - 2.4%: loses money
+        acts, cands = A.today(c)
         self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))
-        self.assertIn("index fund", acts[0]["line"])
 
     def test_the_written_answer_and_method(self):
         c = self.ctx()
@@ -463,7 +466,7 @@ class Actions(unittest.TestCase):
         fresh.pop("status")                                                   # the desk judges fresh ideas before they have a status
         self.assertIn("SCORE:NEW", A.verdicts_from(dict(c, cards=A.as_open([fresh]))))
         c["fct"]["NEW"]["h"]["by"]["due"] = "2027-10-14"
-        c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.4
+        c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.2                                       # +0.8% before fees: the fees take it
         v = A.verdicts_from(c)["SCORE:NEW"]
         self.assertFalse(v["buy"])
         self.assertIn("index fund", v["why"])
