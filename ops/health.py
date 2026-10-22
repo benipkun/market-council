@@ -236,7 +236,22 @@ def main():
             logs[name] = False
     price = (rj("state/decisions.json", {}) or {}).get("price_check")
     out, send, over = assess(runs_by, dates, logs, price, old, now)
-    for m in send:
+    # the records token has an expiry date; when it lapses every job stops, so warn ten days ahead
+    exp = (os.environ.get("TOKEN_EXPIRES") or "").strip()
+    if exp:
+        out["token_expires"] = exp
+        try:
+            left = (datetime.date.fromisoformat(exp[:10]) - now.date()).days
+        except ValueError:
+            left = None
+        if left is not None and left <= 10:
+            text = ("The records token (MC_TOKEN) expires on %s, in %d days. Make a new one on GitHub and save it as MC_TOKEN in "
+                    "both repositories, or every job stops." % (exp[:10], max(left, 0)))
+            out["ok"] = False
+            out["problems"].append({"key": "token", "text": text, "since": iso(now)})
+            last = ((old.get("alerts") or {}).get("token") or {}).get("last_sent")
+            if not last or (now - ts(last)).total_seconds() > 86400:
+                send.append({"title": "Market Council: token expires soon", "message": text, "tag": "key", "keys": ["token"]})    for m in send:
         note = push(m)
         print("phone:", m["title"], "-", note)
         if note == "sent":
