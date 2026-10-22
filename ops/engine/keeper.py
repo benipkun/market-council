@@ -187,6 +187,7 @@ def asks(now, wait_min=WAIT_MIN):
             ctx = actions.build_ctx()
             ctx["spy"] = ctx.get("spy") or ((rj("state/actions.json", {}) or {}).get("inputs") or {}).get("spy")
         import answer as ANS
+        reply, meta = ANS.reply(q)
         via = "ntfy" if "-ntfy-" in fid else "app"
         msgs["messages"] = (msgs.get("messages") or []) + [
             {"id": fid, "at": now, "from": "ben", "text": q, "via": via, "reply_to": None, "status": None},

@@ -544,6 +544,30 @@ class Keeper(unittest.TestCase):
         self.assertEqual((snap["positions"][0]["market_value"], snap["cash"], snap["nav"]), (110.0, 100.0, 210.0))
         self.assertEqual(K.remark(snap, {"AAA": ("2026-10-20", 60.0)}, "2026-10-22T09:00:00Z"), [])   # an older close never overwrites a newer price
 
+    def test_a_waiting_question_is_answered_end_to_end(self):
+        import json as _j
+        import shutil
+        import tempfile
+        d = tempfile.mkdtemp()
+        old = (K.ROOT, ANS.ROOT, A.ROOT)
+        try:
+            K.ROOT = ANS.ROOT = A.ROOT = d
+            os.makedirs(os.path.join(d, "inbox", "queue"))
+            os.makedirs(os.path.join(d, "treasury"))
+            with open(os.path.join(d, "inbox", "queue", "20261001T000000Z-ab1.md"), "w") as f:
+                f.write("ask: How much cash should I keep?" + chr(10))
+            with open(os.path.join(d, "treasury", "snapshot.json"), "w") as f:
+                _j.dump({"cash": 100.0, "nav": 1000.0, "positions": []}, f)
+            K.asks("2026-10-01T01:00:00Z")
+            with open(os.path.join(d, "state", "messages.json")) as f:
+                m = _j.load(f)["messages"]
+            self.assertEqual([x["from"] for x in m], ["ben", "council"])
+            self.assertTrue(m[1]["text"].startswith("Keep at least $30.00 in cash"))
+            self.assertFalse(os.path.exists(os.path.join(d, "inbox", "queue", "20261001T000000Z-ab1.md")))
+        finally:
+            K.ROOT, ANS.ROOT, A.ROOT = old
+            shutil.rmtree(d)
+
     def test_the_command_line_of_a_queue_file(self):
         self.assertEqual(K.command("# note" + chr(10) + chr(10) + "ask: Good or bad?" + chr(10) + "why: x"), "ask: Good or bad?")
 

@@ -65,6 +65,8 @@ def r(x, n=4):
 
 def live_quote(syms):
     # the latest trade (or close) for the shares the question is about, so an answer about "this price" uses today's price
+    if not syms:
+        return {}
     try:
         url = ("https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=" + "%7C".join(urllib.parse.quote(s) for s in syms)
                + "&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1")
