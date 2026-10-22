@@ -251,7 +251,8 @@ def main():
             out["problems"].append({"key": "token", "text": text, "since": iso(now)})
             last = ((old.get("alerts") or {}).get("token") or {}).get("last_sent")
             if not last or (now - ts(last)).total_seconds() > 86400:
-                send.append({"title": "Market Council: token expires soon", "message": text, "tag": "key", "keys": ["token"]})    for m in send:
+                send.append({"title": "Market Council: token expires soon", "message": text, "tag": "key", "keys": ["token"]})
+    for m in send:
         note = push(m)
         print("phone:", m["title"], "-", note)
         if note == "sent":
