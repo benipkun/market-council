@@ -16,7 +16,7 @@ import urllib.request
 
 ROOT = os.environ.get("MC_ROOT", ".")
 CACHE = os.environ.get("MC_CACHE", os.path.join(ROOT, ".cache", "prices"))
-WAIT_MIN = 20
+WAIT_MIN = 1                      # the Trade Inbox routine leaves questions to this answerer
 NL = "\n"
 OFFLINE_NOTE = ("The chat assistant could not answer (the AI routines are switched off on the account), so your own "
                 "system's code answered this from the action list.")
@@ -186,11 +186,11 @@ def asks(now, wait_min=WAIT_MIN):
         if ctx is None:
             ctx = actions.build_ctx()
             ctx["spy"] = ctx.get("spy") or ((rj("state/actions.json", {}) or {}).get("inputs") or {}).get("spy")
-        reply = OFFLINE_NOTE + NL + actions.text(actions.answer(q, ctx))
+        import answer as ANS
         via = "ntfy" if "-ntfy-" in fid else "app"
         msgs["messages"] = (msgs.get("messages") or []) + [
             {"id": fid, "at": now, "from": "ben", "text": q, "via": via, "reply_to": None, "status": None},
-            {"id": fid + "-r", "at": now, "from": "council", "text": reply, "via": None, "reply_to": fid, "status": "answered"}]
+            {"id": fid + "-r", "at": now, "from": "council", "text": reply, "via": None, "reply_to": fid, "status": "answered", "model": meta.get("model"), "note": meta.get("note")}]
         # the trade ledger is left to the Trade Inbox, so this can never overwrite a trade it records at the same moment
         os.remove(os.path.join(qdir, n))
         answered.append(fid)

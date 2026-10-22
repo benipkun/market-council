@@ -1,0 +1,49 @@
+# Runs the fixed test questions on the real records after every change to the answerer, and writes the old and the new
+# answer side by side to the private records (state/questions_eval.json). This public log shows only the pass count.
+name: Question tests
+on:
+  push:
+    branches: [main]
+    paths: ["ops/engine/answer.py", "ops/engine/agent_questions.md", "ops/engine/actions.py", ".github/workflows/questions.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: question-tests
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Fetch the private records
+        uses: actions/checkout@v4
+        with:
+          repository: benipkun/market-council-state
+          token: ${{ secrets.MC_TOKEN }}
+          ref: main
+      - name: Fetch this repository's code
+        uses: actions/checkout@v4
+        with:
+          path: _code
+      - name: Ask the fifteen questions
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mkdir -p ops/engine && cp _code/ops/engine/actions.py _code/ops/engine/answer.py _code/ops/engine/agent_questions.md ops/engine/
+          if python3 ops/engine/answer.py eval > /tmp/q.txt 2>&1; then grep -E '^questions:' /tmp/q.txt || echo "questions: ran"; else echo "questions: FAILED (details in the private records, state/logs/questions.txt)"; echo q > /tmp/failed; fi
+          mkdir -p state/logs && { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/q.txt; } > state/logs/questions.txt
+          exec 3>&1 >/tmp/git.txt 2>&1
+          git config user.name "Market Council Engine"
+          git config user.email "engine@market-council.local"
+          git add -A state/questions_eval.json state/logs/questions.txt state/agents || true
+          if ! git diff --cached --quiet; then
+            git commit -q -m "Question tests $(date -u +%Y-%m-%dT%H:%MZ)"
+            for i in 1 2 3; do
+              if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then break; fi
+              git rebase --abort 2>/dev/null || true
+              sleep 4
+            done
+          fi
+          exec >&3 2>&1
+          if [ -s /tmp/failed ]; then exit 1; fi

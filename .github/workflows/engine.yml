@@ -53,7 +53,7 @@ jobs:
       - name: Put the code next to the records
         run: |
           mkdir -p ops/engine
-          cp _code/ops/engine/*.py _code/ops/engine/funnel_seed.json ops/engine/
+          cp _code/ops/engine/*.py _code/ops/engine/*.md _code/ops/engine/funnel_seed.json ops/engine/
           cp _code/ops/*.py ops/
       - name: Alarm drill (only when started by hand with drill = 1)
         if: github.event.inputs.drill == '1'
@@ -78,6 +78,7 @@ jobs:
         env:
           TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
           NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           QUICK: ${{ github.event.inputs.quick }}
         run: |
           mkdir -p state/logs

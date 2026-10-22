@@ -33,9 +33,10 @@ jobs:
       - name: Check the jobs and the data
         env:
           NTFY_OUT: ${{ secrets.NTFY_OUT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p ops/engine state/logs && cp _code/ops/health.py ops/ && cp _code/ops/engine/actions.py _code/ops/engine/keeper.py ops/engine/
+          mkdir -p ops/engine state/logs && cp _code/ops/health.py ops/ && cp _code/ops/engine/actions.py _code/ops/engine/keeper.py _code/ops/engine/answer.py _code/ops/engine/agent_questions.md ops/engine/
           if python3 ops/health.py > /tmp/health.txt 2>&1; then echo "health: checked"; else echo "health: FAILED (details in the private records, state/logs/health.txt)"; echo health >> /tmp/failed; fi
           # questions the Trade Inbox has not answered within 20 minutes are answered by the action list's own code
           python3 ops/engine/keeper.py asks > /tmp/keeper.txt 2>&1 || echo "keeper: FAILED" >> /tmp/keeper.txt

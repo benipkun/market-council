@@ -22,6 +22,7 @@ import lab as L  # noqa: E402
 import partners as P  # noqa: E402
 import plans as PL  # noqa: E402
 import keeper as K  # noqa: E402
+import answer as ANS  # noqa: E402
 import quant as Q  # noqa: E402
 import strategy as S  # noqa: E402
 import track as T  # noqa: E402
@@ -490,6 +491,32 @@ class Actions(unittest.TestCase):
         b = A.buy_one("NEW", 400.0, c)[0]
         self.assertEqual(b["shares"], 4.0)                                                        # the numbers for the amount asked
         self.assertIn("above your limit", b["flags"])
+
+
+class Answers(unittest.TestCase):
+    FACTS = {"books": {"cash": 366.58, "positions": [{"ticker": "UBER", "weight": 0.5466, "price": 67.62}]}, "risk_profile": {"limits": {"stock_cap": 0.3}},
+             "portfolio_forecast": {"1y": {"port_loss": 0.487, "port_max": 0.19}}, "question": ""}
+
+    def test_a_direct_answer_with_real_numbers_passes(self):
+        a = {"answer": "No, hold UBER.", "why": ["It is 55% of the portfolio against your 30% limit."], "would_change": "A price under the stop.", "evidence": "Model estimate."}
+        self.assertEqual(ANS.check(a, self.FACTS), [])
+
+    def test_hedging_banned_phrases_and_invented_numbers_fail(self):
+        base = {"why": ["It is 55% of the portfolio."], "would_change": "x", "evidence": "y"}
+        self.assertIn("the first sentence does not answer the question", ANS.check(dict(base, answer="It depends on your goals."), self.FACTS))
+        self.assertIn("banned phrase: consider", ANS.check(dict(base, answer="No. Consider trimming."), self.FACTS))
+        self.assertIn("numbers not in the data: 42", ANS.check(dict(base, answer="About 42%."), self.FACTS))
+
+    def test_the_answer_comes_first(self):
+        text = ANS.render({"answer": "No, hold.", "why": ["a", "b"], "would_change": "c", "evidence": "d"})
+        self.assertTrue(text.startswith("No, hold."))
+        self.assertLess(text.index("Why:"), text.index("What would change it:"))
+
+    def test_code_answers_head_on(self):
+        f = dict(self.FACTS, question="What's the chance my portfolio is down this year?")
+        self.assertTrue(ANS.code_answer({"actions": []}, f)["answer"].startswith("About 49%"))
+        kept = {"actions": [{"type": "HOLD", "ticker": "UBER", "decision": True, "review_by": "2027-10-05", "target": 80.0, "line": "HOLD UBER: your decision."}]}
+        self.assertTrue(ANS.code_answer(kept, dict(self.FACTS, question="Should I sell UBER?"))["answer"].startswith("No, hold UBER"))
 
 
 class Keeper(unittest.TestCase):
