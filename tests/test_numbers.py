@@ -471,6 +471,20 @@ class Actions(unittest.TestCase):
         self.assertFalse(v["buy"])
         self.assertIn("index fund", v["why"])
 
+    def test_diversification_one_buy_per_sector_and_new_sectors_first(self):
+        c = self.ctx(sector={"NEW": "Energy", "TWO": "Energy", "ALT": "Utilities", "KEEP": "Utilities"}, held_sectors=["Utilities"])
+        two = dict(c["cards"][0], ticker="TWO", key="SCORE:TWO", id="I2", funding={})
+        alt = dict(c["cards"][0], ticker="ALT", key="SCORE:ALT", id="I3", funding={})
+        c["cards"] = [alt, c["cards"][0], two]
+        c["fct"]["TWO"] = c["fct"]["NEW"]
+        c["fct"]["ALT"] = c["fct"]["NEW"]
+        c["free_cash"] = 1000.0
+        acts, cands = A.today(c)
+        bought = [a["ticker"] if a["type"] == "BUY" else a.get("buy", {}).get("ticker") for a in acts if a["type"] in ("BUY", "SWAP")]
+        self.assertEqual(bought, ["NEW", "ALT"])                                # Energy is new, so it comes before Utilities; TWO is a second Energy idea
+        self.assertIn("for diversification", next(x for x in cands if x["t"] == "TWO")["skip_reason"])
+        self.assertIn("adds a new sector (Energy)", acts[0]["line"])
+
     def test_stale_data_holds_every_buy_back(self):
 
 

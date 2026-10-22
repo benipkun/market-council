@@ -186,6 +186,8 @@ def candidates(ctx):
         fund = c.get("funding") or {}
         out.append({"t": t, "key": c.get("key"), "name": c.get("name"), "card": c.get("id"), "limit": round(limit, 2), "stop": stop, "take_profit": tp, "up": up, "dn": dn, "edge": edge,
                      "index_edge": index_edge, "years": round(years, 3), "vs_index": vs_index,
+                     "sector": (ctx.get("sector") or {}).get(t), "new_sector": bool((ctx.get("sector") or {}).get(t)) and (ctx.get("sector") or {}).get(t) not in (ctx.get("held_sectors") or []),
+                     "bad_change": pf.get("change"),
                      "cap": round(cap, 2), "fc": fc, "evidence": ev, "flags": flags, "disagree": disagree, "held_back": held_back,
                      "bad_per_usd": (pf["change"] / pf["size"]) if pf.get("change") is not None and pf.get("size") else None, "bad_before": pf.get("bad_before"),
                      "fund_sell": fund.get("sell") if fund.get("kind") == "paired_sale" else None, "fund_why": fund.get("why"),
@@ -208,6 +210,22 @@ def qualifies(x):
 
 def tier(x):
     return 1 if beats_index(x) else 2
+
+
+def rank(x):
+    # Rule of 23 Oct 2026 (Ben): index-beaters first; within each group, ideas from a sector not yet held come first,
+    # then those that improve the bad year most, then the best expected result
+    return (tier(x), 0 if x.get("new_sector") else 1, -(x.get("bad_change") or 0), -(x["edge"] or 0))
+
+
+def mix_note(x, ctx):
+    held = dict(((ctx.get("sector") or {}).get(t), t) for t in ctx["hold"]) if ctx.get("sector") else {}
+    out = []
+    if x.get("sector"):
+        out.append(("adds a new sector (%s)" % x["sector"]) if x.get("new_sector") else ("same sector as your %s (%s)" % (held.get(x["sector"], "holdings"), x["sector"])))
+    if x.get("bad_change") is not None and x.get("bad_before") is not None:
+        out.append("bad year %.1f%% to %.1f%%" % (100 * x["bad_before"], 100 * (x["bad_before"] + x["bad_change"])))
+    return (" Diversification: " + "; ".join(out) + ".") if out else ""
 
 
 def mark_tier(a, x):
@@ -349,13 +367,19 @@ def build_ctx(dec=None):
     lim = ((dec.get("profile") or {}).get("limits")) or {}
     stale = [d.get("name") or d.get("id") for d in health.get("data") or [] if d.get("stale") and (d.get("id") in STALE_FEEDS)]
     huf = float(contrib.get("amount") or 0) if str(contrib.get("currency") or "HUF").upper() == "HUF" else None
+    # sectors, for diversification: the wide screen's rows and the engine's assets
+    sector = dict((r.get("t"), r.get("sector")) for r in (rj("state/screen.json", {}) or {}).get("rows") or [] if r.get("t") and r.get("sector"))
+    for t, a in ((rj("state/quant.json", {}) or {}).get("assets") or {}).items():
+        if a.get("sector") and t not in sector:
+            sector[t] = a.get("sector")
     return {"dec": dec, "cards": dec.get("cards") or [], "fct": (rj("state/forecasts.json", {}) or {}).get("targets") or {}, "track": rj("state/track.json", {}) or {},
             "hold": holding_map(snap), "nav": nav, "cash": cash, "limits": lim, "keeps": dec.get("keeps") or {}, "holds": dec.get("holds") or {},
             "pf": dec.get("portfolio_first") or {}, "fx": fx, "stale": stale, "free_cash": max(0.0, cash - float(lim.get("min_cash") or 0.03) * nav),
             "monthly_huf": huf, "monthly_usd": (huf / fx) if huf and fx else None, "spy": dec.get("spy_price"),
             "today": datetime.datetime.now(datetime.timezone.utc).date(),
             "index_mu": float(((rj("state/quant.json", {}) or {}).get("opt") or {}).get("rf") or 0.04) + 0.05,
-            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of")}
+            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector,
+            "held_sectors": sorted(set(sector.get(p.get("ticker")) for p in snap.get("positions") or [] if sector.get(p.get("ticker"))))}
 
 
 def number(acts):
@@ -366,9 +390,12 @@ def number(acts):
 
 def today(ctx):
     cands = candidates(ctx)
-    good = sorted([x for x in cands if qualifies(x)], key=lambda x: (tier(x), -(x["edge"] or 0)))
-    acts, cash = [], ctx["free_cash"]
+    good = sorted([x for x in cands if qualifies(x)], key=rank)
+    acts, cash, used = [], ctx["free_cash"], {}
     for x in good:
+        if x.get("sector") and x["sector"] in used:
+            x["skip_reason"] = "for diversification: %s is already in this list for %s" % (used[x["sector"]], x["sector"])
+            continue
         # a holding is only sold to pay for an idea that beats the index fund
         a = swap_line(x, ctx) if (x["fund_sell"] and tier(x) == 1) else None
         if not a:
@@ -378,8 +405,10 @@ def today(ctx):
             if a and pays == "free cash":
                 cash -= a["usd"] + a["fees"]
         if a and a["expected_usd"] is not None and a["expected_usd"] > 0:
+            a["line"] += mix_note(x, ctx)
             acts.append(mark_tier(a, x))
-    acts.sort(key=lambda a: (a.get("tier", 2), -(a["expected_usd"] or 0)))
+            if x.get("sector"):
+                used[x["sector"]] = x["t"]
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx), ctx))
     acts += [hold_keep(t, ctx) for t in sorted(ctx["keeps"]) if t in ctx["hold"]]
@@ -396,7 +425,7 @@ def verdicts_from(ctx):
         if a:
             out[x["key"]] = {"buy": True, "n": a["n"], "type": a["type"], "line": a["line"], "expected_usd": a.get("expected_usd"), "index_usd": a.get("index_usd")}
         elif x.get("key"):
-            out[x["key"]] = {"buy": False, "why": reason(x)}
+            out[x["key"]] = {"buy": False, "why": x.get("skip_reason") or reason(x)}
     return out
 
 
@@ -423,15 +452,19 @@ def plan_amount(usd, ctx, label=None):
     # spread an amount of new money over the ideas that qualify, best expected result first, each at most what the risk
     # profile allows for one idea; whatever is left goes to the index fund, the yardstick everything is measured against
     cands = candidates(ctx)
-    good = sorted([x for x in cands if qualifies(x)], key=lambda x: (tier(x), -(x["edge"] or 0)))
-    acts, left = [], usd
+    good = sorted([x for x in cands if qualifies(x)], key=rank)
+    acts, left, used = [], usd, set()
     for x in good:
+        if x.get("sector") and x["sector"] in used:
+            continue
         put = min(x["cap"], left)
         if put < max(MIN_ORDER, x["limit"] if x["limit"] < 1000 else MIN_ORDER):
             continue
         a = buy_line(x, put, ctx, "the new money")
         if a and a["expected_usd"] is not None and a["expected_usd"] > 0:
+            a["line"] += mix_note(x, ctx)
             acts.append(mark_tier(a, x))
+            used.add(x.get("sector"))
             left -= a["usd"] + a["fees"]
     whole = not acts
     if left >= MIN_ORDER and ctx.get("spy"):
