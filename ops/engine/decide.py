@@ -797,7 +797,7 @@ def cost_lines(t, liq, limit, sizes):
 
 # ---------------------------------------------------------------- the decision desk: every source of ideas, one kind of card
 SIZES = (100.0, 500.0, 1000.0)     # shown on every card until Ben names his own amount
-FEE_PCT, FEE_MIN = 0.0025, 1.12    # broker: 0.25% of the order, at least one euro (about 1.12 dollars), each way
+FEE_PCT, FEE_MIN = 0.0, 0.02      # Ben's Revolut plan: about 1 to 2 cents a trade (his figure, 23 Oct 2026); past the plan's free trades Revolut charges 0.25%, at least one euro
 PAY_SHARE = 0.10                   # where no measured average exists, an idea "pays" when fees take under a tenth of the planned gain
 DESK_PASS = 5
 DESK_SCORE_MAX = 3                 # the best three scorecard ideas become cards; the others are listed underneath
@@ -1509,7 +1509,7 @@ def main():
     out["desk"] = {"near": near_misses((strat_out.get("edge") or {}).get("rows") or [], scr, digest.get("technicals") or {}), "funnel": fn,
                    "bar_check": bar_check(E.rj("state/paper.json", {})), "records": records, "sizes": list(SIZES), "also": also, "card_limit": DESK_SCORE_MAX,
                    "fee": {"pct": FEE_PCT, "min_usd": FEE_MIN, "pay_share": PAY_SHARE,
-                           "note": "0.25% of the order, at least one euro, each way; the free trades in your plan are not counted. Check the fee in your broker's app."},
+                           "note": "About 1 to 2 cents a trade on your Revolut plan (your figure, 23 Oct 2026). If a month goes past the plan's free trades, Revolut charges 0.25% of the order, at least one euro."},
                    "screen": {k: scr.get(k) for k in ("as_of", "status", "funnel", "limits", "added", "fails_by_check", "runtime_s", "method", "sources")} if scr else None}
     # the wide screen runs every trading day; if its last result is more than three days old it has failed, so say so on the desk and once on the phone
     scr_day = str(scr.get("as_of") or "")[:10]

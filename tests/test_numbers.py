@@ -32,9 +32,9 @@ UTC = datetime.timezone.utc
 
 class Fees(unittest.TestCase):
     def test_broker_fee(self):
-        # 0.25% of the order, at least 1.12 dollars
-        self.assertAlmostEqual(D.fee(100.0), 1.12, places=6)
-        self.assertAlmostEqual(D.fee(1000.0), 2.50, places=6)
+        # Ben's Revolut plan: about 2 cents a trade, whatever the size (23 Oct 2026)
+        self.assertAlmostEqual(D.fee(100.0), 0.02, places=6)
+        self.assertAlmostEqual(D.fee(1000.0), 0.02, places=6)
         self.assertEqual(D.fee(0.0), 0.0)
 
     def test_price_age(self):

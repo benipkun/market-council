@@ -362,7 +362,9 @@ def build_ctx(dec=None):
     health = rj("state/health.json", {}) or {}
     fee_cfg = (dec.get("desk") or {}).get("fee") or {}
     global FEE_PCT, FEE_MIN
-    FEE_PCT, FEE_MIN = float(fee_cfg.get("pct") or FEE_PCT), float(fee_cfg.get("min_usd") or FEE_MIN)
+    # a fee of exactly 0 is a real setting, so only a missing value falls back to the default
+    FEE_PCT = float(fee_cfg["pct"]) if fee_cfg.get("pct") is not None else FEE_PCT
+    FEE_MIN = float(fee_cfg["min_usd"]) if fee_cfg.get("min_usd") is not None else FEE_MIN
     nav, cash = float(snap.get("nav") or 0), float(snap.get("cash") or 0)
     lim = ((dec.get("profile") or {}).get("limits")) or {}
     stale = [d.get("name") or d.get("id") for d in health.get("data") or [] if d.get("stale") and (d.get("id") in STALE_FEEDS)]

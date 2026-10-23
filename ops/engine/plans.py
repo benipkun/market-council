@@ -218,6 +218,10 @@ def watch(plans, prev, holds, today):
 
 
 def run(now, dec, answers=None, push=None):
+    global FEE_PCT, FEE_MIN
+    fc_ = (dec.get("desk") or {}).get("fee") or {}
+    FEE_PCT = float(fc_["pct"]) if fc_.get("pct") is not None else FEE_PCT
+    FEE_MIN = float(fc_["min_usd"]) if fc_.get("min_usd") is not None else FEE_MIN
     snap = E.rj("treasury/snapshot.json", {}) or {}
     prev = E.rj("state/plans.json", {}) or {}
     fct = (E.rj("state/forecasts.json", {}) or {}).get("targets") or {}
