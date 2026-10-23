@@ -485,6 +485,14 @@ class Actions(unittest.TestCase):
         self.assertIn("for diversification", next(x for x in cands if x["t"] == "TWO")["skip_reason"])
         self.assertIn("adds a new sector (Energy)", acts[0]["line"])
 
+    def test_the_fee_follows_the_desk_setting(self):
+        old = (A.FEE_PCT, A.FEE_MIN)
+        try:
+            A.FEE_PCT, A.FEE_MIN = 0.0, 0.02                                    # Ben's plan: about 2 cents a trade
+            self.assertEqual(A.fee(150.0), 0.02)
+        finally:
+            A.FEE_PCT, A.FEE_MIN = old
+
     def test_stale_data_holds_every_buy_back(self):
 
 

@@ -49,7 +49,10 @@ def r2(x, n=2):
     return None if x is None else round(float(x), n)
 
 
-def fee(usd, pct=FEE_PCT, low=FEE_MIN):
+def fee(usd, pct=None, low=None):
+    # read the fee at call time: the desk's setting replaces the defaults after this module loads
+    pct = FEE_PCT if pct is None else pct
+    low = FEE_MIN if low is None else low
     return round(max(pct * usd, low), 2) if usd > 0 else 0.0
 
 
