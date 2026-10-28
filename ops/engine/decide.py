@@ -21,6 +21,7 @@ COST = 0.0025
 TRANCHES = 3
 TRANCHE_DAYS = 30
 SNOOZE_DAYS = 14
+BOUGHT_DAYS = 30        # after you buy a share, no idea card suggests it again for this many days
 CARD_DAYS = 7
 MIN_ORDER = 5.0
 BUY_MARGIN = 0.20
@@ -363,11 +364,27 @@ def settle(prev_cards, answers, ledger, now):
                 c["logged"] = "%d of %d orders logged in the books" % (len(want & got), len(want))
             elif (today - day(c.get("answered_at") or c["created"])).days > 10:
                 c["status"], c["closed_at"], c["closed_why"] = "lapsed", now, "approved, but no matching trade was logged within 10 days"
+        # a suggestion you carried out without pressing yes: you bought the share, so the card is done
+        if c["status"] == "open" and c.get("kind") == "idea" and c.get("ticker"):
+            b = recent_buy(trades, c["ticker"], now)
+            if b and str(b.get("at")) >= str(c.get("created")):
+                c["status"], c["done_at"] = "done", now
+                c["logged"] = "you bought %s on %s ($%.2f)" % (c["ticker"], str(b.get("at"))[:10], float(b.get("usd") or 0))
+            elif b:
+                c["status"], c["closed_at"] = "withdrawn", now
+                c["closed_why"] = "you bought %s on %s; it is not suggested again for %d days" % (c["ticker"], str(b.get("at"))[:10], BOUGHT_DAYS)
     return cards
 
 
-def merge_cards(cards, wanted, now, reasons=None):
+def recent_buy(trades, ticker, now):
+    # the latest applied buy of this share within BOUGHT_DAYS, or None
+    hits = [e for e in trades if e.get("action") == "buy" and e.get("ticker") == ticker and (day(now) - day(str(e.get("at"))[:10])).days < BOUGHT_DAYS]
+    return sorted(hits, key=lambda e: str(e.get("at")))[-1] if hits else None
+
+
+def merge_cards(cards, wanted, now, reasons=None, bought=None):
     today = day(now)
+    bought = set(bought or [])
     live = {}
     for c in cards:
         if c["status"] in ("open", "approved"):
@@ -388,6 +405,9 @@ def merge_cards(cards, wanted, now, reasons=None):
                 if k in w:
                     old[k] = w[k]
             old["refreshed"] = now
+            continue
+        # a share you bought recently is not suggested again (its card is marked done)
+        if w.get("kind") == "idea" and (w.get("ticker") in bought or any(c.get("ticker") == w.get("ticker") and c["status"] == "done" and (today - day(str(c.get("done_at") or c["created"])[:10])).days < BOUGHT_DAYS for c in cards)):
             continue
         last_no = [c for c in cards if c["key"] == w["key"] and c["status"] == "declined"]
         if last_no and (today - day(last_no[-1].get("answered_at") or last_no[-1]["created"])).days < SNOOZE_DAYS:
@@ -1457,7 +1477,9 @@ def main():
                "CORE": "part of the house core is now held, or the strategy changed"}
     if keeps:
         reasons["REBAL"] = "you chose to keep " + ", ".join(sorted(keeps))
-    cards = merge_cards(old, wanted, now, reasons)
+    trades = [x for x in (ledger or {}).get("entries") or [] if x.get("status") == "applied" and x.get("ticker")]
+    bought = set(x["ticker"] for x in trades if recent_buy([x], x["ticker"], now))
+    cards = merge_cards(old, wanted, now, reasons, bought)
     # the live track record: every idea is written down once, on the day it is raised, offered or not
     try:
         import track

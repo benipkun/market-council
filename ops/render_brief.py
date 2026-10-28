@@ -269,6 +269,38 @@ def main():
                    "all sources working" if not issues else "see System health", "up" if not issues else "wn")
     sections.append(("glance", "At a glance", '<div class="tiles">{}</div>'.format(glance), ""))
 
+    # What changed: the brief is new every day even when no news or pick cleared the bar
+    days = [obj(x) for x in arr(obj(load("state/nav_history.json")).get("days"))]
+    held_now = [obj(x) for x in arr(obj(load("treasury/snapshot.json")).get("positions"))]
+    rows = ""
+    if len(days) >= 2:
+        a, b = days[-2], days[-1]
+        d = (num(b.get("nav")) or 0) - (num(a.get("nav")) or 0)
+        rows += '<div class="kv"><span>Portfolio value</span><span class="r mono">{} <span class="{}">{}</span><br><span class="note">since {}, new money included</span></span></div>'.format(
+            usd(b.get("nav")), "up" if d >= 0 else "dn", usd(d, 2, True), day(a.get("date")))
+    moves = []
+    for p in held_now:
+        r, mv = num(obj(assets.get(p.get("ticker"))).get("ret_1D")), num(p.get("market_value"))
+        if r is not None and mv is not None and r > -1:
+            moves.append((str(p.get("ticker")), r, mv * r / (1 + r)))
+    for t, r, du in sorted(moves, key=lambda m: -abs(m[2])):
+        rows += '<div class="kv"><span><b>{}</b> last trading day</span><span class="r mono {}">{} &middot; {}</span></div>'.format(
+            e(t), "up" if r >= 0 else "dn", pct(100 * r), usd(du, 2, True))
+    since = str(days[-2].get("date")) if len(days) >= 2 else str(today - datetime.timedelta(days=1))
+    done = [x for x in arr(obj(load("treasury/ledger.json")).get("entries")) if obj(x).get("status") == "applied" and not obj(x).get("undone_by")
+            and obj(x).get("action") in ("buy", "sell", "deposit", "withdraw", "dividend") and str(obj(x).get("at"))[:10] >= since]
+    for x in done:
+        rows += '<div class="kv"><span>You logged: {} {}</span><span class="r mono">{}<br><span class="note">{}</span></span></div>'.format(
+            e(x.get("action")), e(x.get("ticker") or ""), usd(x.get("usd")), day(x.get("at")))
+    for c in [obj(c) for c in arr(dec.get("cards"))]:
+        t = str(c.get("done_at") or c.get("closed_at") or "")
+        if c.get("status") == "done" and t[:10] >= since:
+            rows += '<div class="kv"><span>Closed: {}</span><span class="r note">{}</span></div>'.format(e(c.get("title_plain") or c.get("title")), e(c.get("logged") or "done"))
+        elif c.get("status") == "open" and str(c.get("created"))[:10] >= since:
+            rows += '<div class="kv"><span>New on the desk: {}</span><span class="r note">{}</span></div>'.format(e(c.get("title_plain") or c.get("title")), day(c.get("created")))
+    if rows:
+        sections.append(("changed", "What changed", rows + '<p class="note">Day moves are closing prices from the engine; the value line comes from your books.</p>', ""))
+
     # What to do now: the numbered action list (ops/engine/actions.py), the same one the app shows on Today
     acts = obj(load("state/actions.json"))
     if arr(acts.get("actions")):
@@ -319,20 +351,25 @@ def main():
         body = '<p class="empty">Nothing news-driven cleared the bar this cycle. That is the normal state.</p>'
     sections.append(("attention", "Needs attention", body, ""))
     body = "".join(pick_card(p, tech) for p in mis) if mis else '<p class="empty">No valuation gap cleared the bar this cycle.</p>'
-    if offline:
+    if offline or not mis:
         # from our own valuation (the engine's research cards): price at least 20% away from our fair value
-        rows = ""
+        rows, unclear = "", []
         for c in sorted(valued, key=lambda c: -abs(num(c.get("mos")) or 0)):
             px, fair, mos = num(obj(assets.get(c.get("t"))).get("last")), num(c.get("fair")), num(c.get("mos"))
             if px is None or fair is None or mos is None or abs(mos) < 0.20:
                 continue
             fr = obj(c.get("fair_range"))
+            if abs(mos) > 1 or (num(fr.get("low")) is not None and num(fr.get("low")) <= 0):
+                unclear.append(str(c.get("t")))
+                continue
             rows += '<tr><td><b>{}</b> {}</td><td class="r mono">{}</td><td class="r mono">{}</td><td class="r {}">{}</td><td>{}</td></tr>'.format(
                 e(c.get("t")), e(c.get("name") or ""), usd(px), usd(fair), "up" if mos >= 0 else "dn", pct(100 * mos),
                 "range {} to {}".format(usd(fr.get("low")), usd(fr.get("high"))) if fr.get("low") is not None else "")
         body = ('<div class="tw"><table><thead><tr><th>Share</th><th class="r">Price</th><th class="r">Our fair value</th><th class="r">Gap</th><th>Across assumptions</th></tr></thead>'
                 '<tbody>{}</tbody></table></div><p class="note">Our own valuation from company statements; a gap of 20% or more either way. A wide range means the value is unclear.</p>').format(rows) if rows else \
             '<p class="empty">No share is 20% or more away from our own fair value.</p>'
+        if unclear:
+            body += '<p class="note">Left out because our model cannot value them reliably (the range starts at zero): {}.</p>'.format(e(", ".join(unclear)))
     sections.append(("mispriced", "Mispriced", body, ""))
 
     # 4. Idea tracker
@@ -433,13 +470,17 @@ def main():
         sections.append(("watch", "Watchlist", body, ""))
 
     # 7. Headlines
-    scrap = sorted((obj(x) for x in arr(dig.get("scrap"))), key=lambda x: str(x.get("first_seen")), reverse=True)[:12]
+    scrap = [x for x in (obj(x) for x in arr(dig.get("scrap")))
+             if not str(x.get("headline") or "").startswith("Price $") and "prior cycle" not in str(x.get("headline") or "")]
+    scrap = sorted(scrap, key=lambda x: str(x.get("first_seen")), reverse=True)[:12]
     if offline:
         sections.append(("news", "Latest headlines", off_note, ""))
     elif scrap:
         body = "".join('<div class="ev"><div class="d">{}</div><div><b>{}</b> {}</div></div>'.format(
             day(x.get("first_seen")), e(x.get("ticker")), e(x.get("headline"))) for x in scrap)
         sections.append(("news", "Latest headlines", body, ""))
+    else:
+        sections.append(("news", "Latest headlines", '<p class="empty">No company news this cycle; price moves are under What changed.</p>', ""))
 
     # 8. Research notes
     notes = [obj(x) for x in arr(research.get("notes"))]

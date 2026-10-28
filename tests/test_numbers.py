@@ -518,6 +518,26 @@ class Actions(unittest.TestCase):
         self.assertIn("above your limit", b["flags"])
 
 
+class CardsFollowTrades(unittest.TestCase):
+    def test_a_suggestion_you_bought_closes_and_is_not_raised_again(self):
+        cards = [{"id": "I1", "key": "SCORE:AAA", "kind": "idea", "ticker": "AAA", "status": "open", "created": "2026-10-21T10:00:00Z", "expires": "2026-11-04"}]
+        ledger = {"entries": [{"action": "buy", "ticker": "AAA", "usd": 133.43, "status": "applied", "at": "2026-10-27T03:15:01Z"}]}
+        c = D.settle(cards, [], ledger, "2026-10-28T08:00:00Z")
+        self.assertEqual(c[0]["status"], "done")
+        self.assertIn("you bought AAA on 2026-10-27", c[0]["logged"])
+        out = D.merge_cards(c, [{"key": "RULE:dip:AAA", "kind": "idea", "ticker": "AAA", "valid_days": 3}], "2026-10-29T08:00:00Z")
+        self.assertEqual([x["status"] for x in out if x.get("ticker") == "AAA"], ["done"])        # no new AAA card
+
+
+    def test_a_card_raised_after_you_bought_is_withdrawn(self):
+        cards = [{"id": "I2", "key": "RULE:dip:BBB", "kind": "idea", "ticker": "BBB", "status": "open", "created": "2026-10-28T10:00:00Z", "expires": "2026-10-31"}]
+        ledger = {"entries": [{"action": "buy", "ticker": "BBB", "usd": 198.03, "status": "applied", "at": "2026-10-23T09:00:00Z"}]}
+        c = D.settle(cards, [], ledger, "2026-10-28T12:00:00Z")
+        self.assertEqual(c[0]["status"], "withdrawn")
+        out = D.merge_cards(c, [{"key": "SCORE:BBB", "kind": "idea", "ticker": "BBB", "valid_days": 3}], "2026-10-29T08:00:00Z", bought={"BBB"})
+        self.assertFalse([x for x in out if x.get("ticker") == "BBB" and x["status"] == "open"])
+
+
 class Answers(unittest.TestCase):
     FACTS = {"books": {"cash": 366.58, "positions": [{"ticker": "UBER", "weight": 0.5466, "price": 67.62}]}, "risk_profile": {"limits": {"stock_cap": 0.3}},
              "portfolio_forecast": {"1y": {"port_loss": 0.487, "port_max": 0.19}}, "question": ""}
