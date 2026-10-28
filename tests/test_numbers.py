@@ -443,12 +443,37 @@ class Actions(unittest.TestCase):
         c["fct"]["NEW"]["h"]["by"]["due"] = "2027-10-14"
         c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.4
         acts, cands = A.today(c)
-        self.assertEqual((acts[0]["type"], acts[0]["ticker"], acts[0]["tier"]), ("BUY", "NEW", 2))   # not a swap: holdings are sold only for index-beaters
+        self.assertEqual((acts[0]["type"], acts[0]["ticker"], acts[0]["tier"]), ("BUY", "NEW", 2))   # not a swap: no 1-year forecast shows it clearly better than OLD
         self.assertIn("trails the index fund", acts[0]["flags"])
         self.assertAlmostEqual(acts[0]["expected_usd"], 1.76, places=2)                            # 100 x 4% - 2 x $1.12
         c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.1                                       # 1.6% - 2.4%: loses money
         acts, cands = A.today(c)
         self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))
+
+    def year_ctx(self, **kw):
+        # NEW trails the index fund (tier 2); in a year the Forecaster's middle outcome is +8% for NEW and -10% for OLD
+        c = self.ctx(**kw)
+        c["fct"]["NEW"]["h"]["by"]["due"] = "2027-10-14"
+        c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.4
+        c["fct"]["NEW"].update(price=100.0)
+        c["fct"]["NEW"]["h"]["1y"] = {"median": 108.0, "f": {"beat": {"p": 0.52}}}
+        c["fct"]["OLD"].update(price=20.0)
+        c["fct"]["OLD"]["h"]["1y"] = {"median": 18.0, "f": {"beat": {"p": 0.41}}}
+        c["cards"][0]["funding"] = {}
+        return c
+
+    def test_sell_this_buy_this_instead_when_clearly_better(self):
+        acts, _ = A.today(self.year_ctx())
+        a = acts[0]
+        self.assertEqual((a["type"], a["sell"]["ticker"], a["buy"]["ticker"], a["tier"]), ("SWAP", "OLD", "NEW", 2))
+        self.assertIn("+8.0% for NEW against -10.0% for OLD", a["why_better"])
+        self.assertGreaterEqual(a["margin"], A.SWAP_MARGIN)                     # 18 points less the switch costs
+        self.assertEqual(A.should_sell("OLD", self.year_ctx())[0]["type"], "SWAP")   # the sell answer agrees with the list
+
+    def test_a_share_you_just_bought_is_not_swapped_away(self):
+        acts, _ = A.today(self.year_ctx(recent_buys={"OLD"}))
+        self.assertEqual(acts[0]["type"], "BUY")
+        self.assertIn("bought it in the last 30 days", A.should_sell("OLD", self.year_ctx(recent_buys={"OLD"}))[0]["line"])
 
     def test_the_written_answer_and_method(self):
         c = self.ctx()
@@ -536,6 +561,12 @@ class CardsFollowTrades(unittest.TestCase):
         self.assertEqual(c[0]["status"], "withdrawn")
         out = D.merge_cards(c, [{"key": "SCORE:BBB", "kind": "idea", "ticker": "BBB", "valid_days": 3}], "2026-10-29T08:00:00Z", bought={"BBB"})
         self.assertFalse([x for x in out if x.get("ticker") == "BBB" and x["status"] == "open"])
+
+
+    def test_a_new_buy_signal_for_a_share_you_bought_is_raised(self):
+        cards = [{"id": "I3", "key": "SCORE:CCC", "kind": "idea", "ticker": "CCC", "status": "done", "created": "2026-10-20T10:00:00Z", "done_at": "2026-10-27T10:00:00Z", "expires": "2026-11-03"}]
+        out = D.merge_cards(cards, [{"key": "RULE:dip:CCC", "kind": "idea", "ticker": "CCC", "valid_days": 3, "verdict": {"buy": True, "n": 1}}], "2026-10-29T08:00:00Z", bought={"CCC"})
+        self.assertEqual([x["key"] for x in out if x["status"] == "open"], ["RULE:dip:CCC"])
 
 
 class Answers(unittest.TestCase):

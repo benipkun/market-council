@@ -40,7 +40,7 @@ return '<div class="gap" style="display:flex;flex-wrap:wrap;gap:6px;align-items:
 (note?'<div class="src">'+esc(note)+'</div>':"");}
 function html(){var a=M.X.acts;if(!a||!a.actions)return "";
 var top=a.actions[0]||{},v=view,cnt=a.actions.filter(function(x){return !x.decision;}).length;
-var body=v?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">'+esc(v.head)+'</div>'+list(v.acts)+'<div class="gap"><button class="btn sm" data-p11="back">Back to today\'s list</button></div>':list(a.actions);
+var body=v?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">'+esc(v.head)+'</div>'+list(v.acts)+'<div class="gap"><button class="btn sm" data-p11="back">Back to today\'s list</button></div>':list(a.actions)+((a.swap_options||[]).length?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">OTHER SWAPS: SELL THIS, BUY THIS INSTEAD</div>'+list(a.swap_options):"");
 return M.blk("WHAT TO DO NOW",'<span class="stg '+(top.type==="HOLD"&&!top.ticker?"paper":"live")+'">'+cnt+' ACTION'+(cnt===1?"":"S")+'</span>'+((a.stale||[]).length?'<span class="stg stale" style="margin-left:6px">STALE DATA</span>':""),
 body+box(a)+reply(),
 "Worked out "+M.upd(a.as_of)+" from the books of "+esc(String(a.books_as_of||"").slice(0,16))+". "+esc(a.foot||""));}

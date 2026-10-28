@@ -370,9 +370,9 @@ def settle(prev_cards, answers, ledger, now):
             if b and str(b.get("at")) >= str(c.get("created")):
                 c["status"], c["done_at"] = "done", now
                 c["logged"] = "you bought %s on %s ($%.2f)" % (c["ticker"], str(b.get("at"))[:10], float(b.get("usd") or 0))
-            elif b:
+            elif b and not (c.get("verdict") or {}).get("buy"):
                 c["status"], c["closed_at"] = "withdrawn", now
-                c["closed_why"] = "you bought %s on %s; it is not suggested again for %d days" % (c["ticker"], str(b.get("at"))[:10], BOUGHT_DAYS)
+                c["closed_why"] = "you bought %s on %s; only a new buy signal for it is shown" % (c["ticker"], str(b.get("at"))[:10])
     return cards
 
 
@@ -406,8 +406,8 @@ def merge_cards(cards, wanted, now, reasons=None, bought=None):
                     old[k] = w[k]
             old["refreshed"] = now
             continue
-        # a share you bought recently is not suggested again (its card is marked done)
-        if w.get("kind") == "idea" and (w.get("ticker") in bought or any(c.get("ticker") == w.get("ticker") and c["status"] == "done" and (today - day(str(c.get("done_at") or c["created"])[:10])).days < BOUGHT_DAYS for c in cards)):
+        # a share you bought recently: its old signals are done; only a new signal the action list would buy is raised again
+        if w.get("kind") == "idea" and w.get("ticker") in bought and not (w.get("verdict") or {}).get("buy"):
             continue
         last_no = [c for c in cards if c["key"] == w["key"] and c["status"] == "declined"]
         if last_no and (today - day(last_no[-1].get("answered_at") or last_no[-1]["created"])).days < SNOOZE_DAYS:
@@ -1446,6 +1446,12 @@ def main():
         pfirst = portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct)
     except Exception as e:
         pfirst = {"error": "%s: %s" % (type(e).__name__, str(e)[:120])}
+    # a share you bought: the signals that raised it are done, so they are not judged (or suggested) again
+    trades = [x for x in (ledger or {}).get("entries") or [] if x.get("status") == "applied" and x.get("ticker")]
+    bought = set(x["ticker"] for x in trades if recent_buy([x], x["ticker"], now))
+    spent = set(c["key"] for c in old if c.get("ticker") in bought and c["status"] in ("done", "withdrawn")
+                and (day(now) - day(str(c.get("done_at") or c.get("closed_at") or c["created"])[:10])).days < BOUGHT_DAYS)
+    wanted = [w for w in wanted if not (w.get("kind") == "idea" and w.get("key") in spent)]
     # one judge: an idea card asks for your yes only when today's action list would buy it; otherwise it says why not,
     # so the cards, the phone, the morning check and the action list never disagree
     try:
@@ -1477,8 +1483,6 @@ def main():
                "CORE": "part of the house core is now held, or the strategy changed"}
     if keeps:
         reasons["REBAL"] = "you chose to keep " + ", ".join(sorted(keeps))
-    trades = [x for x in (ledger or {}).get("entries") or [] if x.get("status") == "applied" and x.get("ticker")]
-    bought = set(x["ticker"] for x in trades if recent_buy([x], x["ticker"], now))
     cards = merge_cards(old, wanted, now, reasons, bought)
     # the live track record: every idea is written down once, on the day it is raised, offered or not
     try:

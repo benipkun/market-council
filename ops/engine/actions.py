@@ -308,6 +308,64 @@ def sell_numbers(t, ctx, qty=None):
 
 def swap_line(x, ctx):
     s = x["fund_sell"]
+    sfc = fct_for(ctx["fct"], s) or {}
+    why = "%s is %s. %s" % (x["t"], x["vs_index"], x["fund_why"] or "")
+    if sfc.get("beat_index") is not None:
+        why += " The Forecaster gives %s %d%% to beat the index fund over %s." % (s, round(100 * sfc["beat_index"]), sfc.get("beat_over"))
+    return swap_for(x, s, ctx, why)
+
+
+# Ben, 29 Oct 2026: "add a sell this stock, buy this one instead option". A holding is swapped for an idea that is
+# clearly better: the Forecaster's middle outcome in a year beats the holding's by SWAP_MARGIN after the switch costs.
+# Never for a kept holding (UBER), never for a share bought in the last BOUGHT_DAYS (you just followed the list).
+SWAP_MARGIN = 0.05
+BOUGHT_DAYS = 30
+
+
+def mid_1y(t, ctx):
+    # the Forecaster's middle outcome in a year (half its simulated paths end above it) and its odds to beat the index fund
+    f = (ctx["fct"] or {}).get(t) or {}
+    h = (f.get("h") or {}).get("1y") or {}
+    if f.get("none") or not f.get("price") or h.get("median") is None:
+        return None
+    return {"ret": float(h["median"]) / float(f["price"]) - 1, "beat": ((h.get("f") or {}).get("beat") or {}).get("p")}
+
+
+def swap_choices(x, ctx, used=()):
+    mx = mid_1y(x["t"], ctx)
+    if not mx or not qualifies(x):
+        return []
+    out = []
+    for s in sorted(ctx["hold"]):
+        if s == x["t"] or s in ctx["keeps"] or s in (ctx.get("recent_buys") or ()) or s in used:
+            continue
+        ms = mid_1y(s, ctx)
+        sn = sell_numbers(s, ctx)
+        if not ms or sn["proceeds"] < 1:
+            continue
+        cost = (sn["fees"] + sn["tax"] + fee(min(sn["proceeds"], x["cap"]))) / sn["proceeds"]
+        margin = mx["ret"] - ms["ret"] - cost
+        if margin >= SWAP_MARGIN:
+            out.append({"sell": s, "margin": margin, "cost": cost, "new": mx, "old": ms})
+    return sorted(out, key=lambda o: -o["margin"])
+
+
+def swap_better(x, o, ctx):
+    s, mx, ms = o["sell"], o["new"], o["old"]
+    why = "in a year the Forecaster's middle outcome is %+.1f%% for %s against %+.1f%% for %s; after the switch costs (%.1f%%) that is %.1f points better (estimates)." % (
+        100 * mx["ret"], x["t"], 100 * ms["ret"], s, 100 * o["cost"], 100 * o["margin"])
+    if mx.get("beat") is not None and ms.get("beat") is not None:
+        why += " Odds to beat the index fund over a year: %d%% for %s, %d%% for %s." % (round(100 * mx["beat"]), x["t"], round(100 * ms["beat"]), s)
+    a = swap_for(x, s, ctx, why)
+    if a:
+        a["margin"] = r2(o["margin"], 4)
+        left = round(x["cap"] - a["usd"], 2)
+        if left >= 10:
+            a["line"] += " Another $%s of %s from new money would fill it up to its limit." % (money(left), x["t"])
+    return a
+
+
+def swap_for(x, s, ctx, why):
     if s not in ctx["hold"] or s in ctx["keeps"]:
         return None
     sn = sell_numbers(s, ctx)
@@ -315,10 +373,6 @@ def swap_line(x, ctx):
     b = buy_line(x, budget, ctx, "the sale of %s" % s)
     if not b:
         return None
-    sfc = fct_for(ctx["fct"], s) or {}
-    why = "%s is %s. %s" % (x["t"], x["vs_index"], x["fund_why"] or "")
-    if sfc.get("beat_index") is not None:
-        why += " The Forecaster gives %s %d%% to beat the index fund over %s." % (s, round(100 * sfc["beat_index"]), sfc.get("beat_over"))
     net = round(sn["proceeds"] - b["usd"] - b["fees"], 2)
     a = dict(b)
     a.update({"type": "SWAP", "sell": dict(sn, ticker=s), "buy": {"ticker": x["t"], "shares": b["shares"], "limit": b["limit"], "usd": b["usd"]},
@@ -383,8 +437,14 @@ def build_ctx(dec=None):
             "monthly_huf": huf, "monthly_usd": (huf / fx) if huf and fx else None, "spy": dec.get("spy_price"),
             "today": datetime.datetime.now(datetime.timezone.utc).date(),
             "index_mu": float(((rj("state/quant.json", {}) or {}).get("opt") or {}).get("rf") or 0.04) + 0.05,
-            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector,
+            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector, "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}),
             "held_sectors": sorted(set(sector.get(p.get("ticker")) for p in snap.get("positions") or [] if sector.get(p.get("ticker"))))}
+
+
+def recent_buys(ledger):
+    cut = (datetime.datetime.now(datetime.timezone.utc).date() - datetime.timedelta(days=BOUGHT_DAYS)).isoformat()
+    return set(e["ticker"] for e in ledger.get("entries") or [] if e.get("action") == "buy" and e.get("status") == "applied"
+               and e.get("ticker") and not e.get("undone_by") and str(e.get("at"))[:10] >= cut)
 
 
 def number(acts):
@@ -396,7 +456,7 @@ def number(acts):
 def today(ctx):
     cands = candidates(ctx)
     good = sorted([x for x in cands if qualifies(x)], key=rank)
-    acts, cash, used = [], ctx["free_cash"], {}
+    acts, cash, used, sold = [], ctx["free_cash"], {}, set()
     for x in good:
         if x.get("sector") and x["sector"] in used:
             x["skip_reason"] = "for diversification: %s is already in this list for %s" % (used[x["sector"]], x["sector"])
@@ -404,11 +464,18 @@ def today(ctx):
         # a holding is only sold to pay for an idea that beats the index fund
         a = swap_line(x, ctx) if (x["fund_sell"] and tier(x) == 1) else None
         if not a:
+            ch = swap_choices(x, ctx, sold)
+            a = swap_better(x, ch[0], ctx) if ch else None
+        if a:
+            sold.add(a["sell"]["ticker"])
+        if not a:
             usd = min(x["cap"], cash) if cash >= MIN_ORDER else x["cap"]
             pays = "free cash" if cash >= MIN_ORDER else ("new money: the next monthly %s HUF" % "{:,.0f}".format(ctx["monthly_huf"]) if ctx["monthly_huf"] else "new money")
             a = buy_line(x, usd, ctx, pays)
             if a and pays == "free cash":
                 cash -= a["usd"] + a["fees"]
+            if a and x["t"] in ctx["hold"]:
+                a["line"] += " You already hold $%s of %s; this adds to it." % (money(ctx["hold"][x["t"]]["value"]), x["t"])
         if a and a["expected_usd"] is not None and a["expected_usd"] > 0:
             a["line"] += mix_note(x, ctx)
             acts.append(mark_tier(a, x))
@@ -418,6 +485,24 @@ def today(ctx):
         acts.append(hold_top(why_nothing(cands, ctx), ctx))
     acts += [hold_keep(t, ctx) for t in sorted(ctx["keeps"]) if t in ctx["hold"]]
     return number(acts), cands
+
+
+def swap_options(cands, acts, ctx, n=3):
+    # every other clearly-better swap, best first, for "sell this, buy this instead"
+    have = set((a["sell"]["ticker"], a["buy"]["ticker"]) for a in acts if a["type"] == "SWAP")
+    out = []
+    for x in cands:
+        if x.get("skip_reason"):
+            continue
+        for o in swap_choices(x, ctx):
+            if (o["sell"], x["t"]) not in have:
+                a = swap_better(x, o, ctx)
+                if a:
+                    out.append(a)
+    out = sorted(out, key=lambda a: -a["margin"])[:n]
+    for i, a in enumerate(out):
+        a["n"], a["option"] = "ABC"[i], True
+    return out
 
 
 def verdicts_from(ctx):
@@ -505,6 +590,10 @@ def should_sell(t, ctx):
     sn = sell_numbers(t, ctx)
     swaps = [swap_line(x, ctx) for x in candidates(ctx) if qualifies(x) and x["fund_sell"] == t]
     swaps = [s for s in swaps if s]
+    if not swaps:
+        for x in candidates(ctx):
+            ch = [o for o in swap_choices(x, ctx) if o["sell"] == t]
+            swaps += [s for s in [swap_better(x, ch[0], ctx) if ch else None] if s]
     if swaps:
         return number(sorted(swaps, key=lambda a: -(a["expected_usd"] or 0))[:1])
     hp = ctx["holds"].get(t) or {}
@@ -517,8 +606,8 @@ def should_sell(t, ctx):
         a["portfolio"] = {"largest": largest_after(ctx["hold"], ctx["nav"], drop_t=t)}
         return number([a])
     beat = sfc.get("beat_index")
-    why = "no idea that beats the index fund is paired with selling it, and it is above your maximum-loss line%s. Selling would cost $%.2f in fees%s." % (
-        (" ($%s)" % money(floor)) if floor else "", sn["fees"], (" and about $%.2f tax" % sn["tax"]) if sn["tax"] else "")
+    why = "no idea is expected to do clearly better than it after the costs of switching%s, and it is above your maximum-loss line%s. Selling would cost $%.2f in fees%s." % (
+        (" (and you bought it in the last %d days)" % BOUGHT_DAYS) if t in (ctx.get("recent_buys") or ()) else "", (" ($%s)" % money(floor)) if floor else "", sn["fees"], (" and about $%.2f tax" % sn["tax"]) if sn["tax"] else "")
     if beat is not None:
         why += " The Forecaster gives it %d%% to beat the index fund over %s." % (round(100 * beat), sfc.get("beat_over"))
     return number([{"type": "HOLD", "ticker": t, "line": "HOLD %s: %s" % (t, why[0].upper() + why[1:]), "if_sold": sn,
@@ -644,6 +733,8 @@ def text(ans):
             extra.append("largest holding after: %s %d%%" % (p["largest"]["t"], round(100 * p["largest"]["share"])))
         if p.get("bad_year") is not None and p.get("bad_year_now") is not None:
             extra.append("bad year %.1f%% (now %.1f%%)" % (100 * p["bad_year"], 100 * (p.get("bad_year_now") or 0)))
+        if a.get("why_better"):
+            extra.append("why: " + a["why_better"])
         if a.get("evidence"):
             extra.append(a["evidence"]["text"])
         if a.get("disagree"):
@@ -671,7 +762,7 @@ def run(now=None, dec=None, spy_price=None):
     acts, cands = today(ctx)
     sells = dict((t, should_sell(t, ctx)) for t in sorted(ctx["hold"]))
     out = {"as_of": now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "books_as_of": ctx["books_as_of"], "desk_as_of": ctx["desk_as_of"],
-           "actions": acts, "sell_answers": sells, "stale": ctx["stale"],
+           "actions": acts, "swap_options": swap_options(cands, acts, ctx), "sell_answers": sells, "stale": ctx["stale"],
            "monthly_answer": plan_amount(ctx["monthly_usd"], ctx) if ctx["monthly_usd"] else None,
            "inputs": {"cash": r2(ctx["cash"]), "free_cash": r2(ctx["free_cash"]), "nav": r2(ctx["nav"]), "usd_huf": r2(ctx["fx"], 4), "monthly_huf": ctx["monthly_huf"],
                       "monthly_usd": r2(ctx["monthly_usd"]), "fee_pct": FEE_PCT, "fee_min_usd": FEE_MIN, "min_order": MIN_ORDER, "tax_rate": TAX_RATE,

@@ -304,8 +304,12 @@ def main():
     # What to do now: the numbered action list (ops/engine/actions.py), the same one the app shows on Today
     acts = obj(load("state/actions.json"))
     if arr(acts.get("actions")):
-        rows = "".join('<div class="pick"><div class="pt"><span class="tk">{}. {}</span></div><p>{}</p></div>'.format(
-            e(obj(a).get("n")), e(obj(a).get("type")), e(obj(a).get("line"))) for a in arr(acts.get("actions")))
+        row = '<div class="pick"><div class="pt"><span class="tk">{}. {}</span></div><p>{}</p>{}</div>'
+        why = lambda a: '<p class="note">Why: {}</p>'.format(e(a.get("why_better"))) if a.get("why_better") else ""
+        rows = "".join(row.format(e(obj(a).get("n")), e(obj(a).get("type")), e(obj(a).get("line")), why(obj(a))) for a in arr(acts.get("actions")))
+        if arr(acts.get("swap_options")):
+            rows += '<p class="note"><b>Other swaps: sell this, buy this instead</b></p>' + "".join(
+                row.format(e(obj(a).get("n")), e(obj(a).get("type")), e(obj(a).get("line")), why(obj(a))) for a in arr(acts.get("swap_options")))
         sections.append(("actions", "What to do now", rows + '<p class="note">{}</p>'.format(e(acts.get("foot"))), ""))
 
     # Decision desk: standing ideas from every source. A card stays until it is answered or expires,
