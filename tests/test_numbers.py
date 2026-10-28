@@ -550,8 +550,8 @@ class CardsFollowTrades(unittest.TestCase):
         c = D.settle(cards, [], ledger, "2026-10-28T08:00:00Z")
         self.assertEqual(c[0]["status"], "done")
         self.assertIn("you bought AAA on 2026-10-27", c[0]["logged"])
-        out = D.merge_cards(c, [{"key": "RULE:dip:AAA", "kind": "idea", "ticker": "AAA", "valid_days": 3}], "2026-10-29T08:00:00Z")
-        self.assertEqual([x["status"] for x in out if x.get("ticker") == "AAA"], ["done"])        # no new AAA card
+        out = D.merge_cards(c, [{"key": "RULE:dip:AAA", "kind": "idea", "ticker": "AAA", "valid_days": 3}], "2026-10-29T08:00:00Z", bought={"AAA"})
+        self.assertEqual([x["status"] for x in out if x.get("ticker") == "AAA"], ["done"])        # a signal that is not a buy is not raised
 
 
     def test_a_card_raised_after_you_bought_is_withdrawn(self):
