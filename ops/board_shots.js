@@ -25,11 +25,13 @@ const TABS = ["today", "brief", "portfolio", "map", "risk", "plans", "log", "res
   for (const tab of TABS) {
     const t0 = Date.now();
     try {
-      await page.goto(URL + "#" + tab, { waitUntil: "networkidle", timeout: 60000 });
-      await page.waitForTimeout(3000);
+      // "network idle" never comes on screens that keep loading, so wait for the page and then a fixed time
+      await page.goto(URL + "#" + tab, { waitUntil: "load", timeout: 60000 });
+      await page.waitForTimeout(6000);
+      const idle = await page.waitForLoadState("networkidle", { timeout: 4000 }).then(() => true).catch(() => false);
       const h = await page.evaluate(() => document.documentElement.scrollHeight);
       await page.screenshot({ path: path.join(out, tab + ".png"), fullPage: true, clip: { x: 0, y: 0, width: 390, height: Math.min(h, 5000) } });
-      report.push({ tab, ok: true, ms: Date.now() - t0, height: h });
+      report.push({ tab, ok: true, ms: Date.now() - t0, height: h, settled: idle });
       n++;
     } catch (e) {
       report.push({ tab, ok: false, ms: Date.now() - t0, why: String(e.message || e).slice(0, 160) });

@@ -24,7 +24,7 @@ if(e.text)s.push("Evidence: "+esc(e.text));
 (a.disagree||[]).forEach(function(d){s.push('<span style="color:var(--wn)">The parts disagree: '+esc(d)+'</span>');});
 if(a.effect)s.push(esc(a.effect));(a.closest||[]).forEach(function(c){s.push("Closest idea: "+esc(c));});if(a.valid_until)s.push("Card valid until "+esc(a.valid_until)+". "+esc(a.exit_rule||""));
 var flags=(a.flags||[]).map(function(x){return '<span class="stg '+(x==="unproven"?"stale":"paper")+'" style="margin-left:6px">'+esc(x.toUpperCase())+'</span>';}).join("");
-return '<div class="q" style="margin-top:8px"><span class="stg '+(TAG[a.type]||"paper")+'">'+(a.n||"")+". "+a.type+'</span>'+flags+'<div style="font-size:13px;color:var(--tx);font-weight:700;margin:4px 0;white-space:normal">'+esc(a.line||"")+'</div>'+
+return '<div class="q" style="margin-top:8px"><span class="stg '+(TAG[a.type]||"paper")+'">'+(a.n||"")+". "+a.type+'</span>'+flags+'(a.head?'<div style="font-size:15px;color:var(--tx);font-weight:800;margin:4px 0;white-space:normal">'+esc(a.head)+'</div>':"")+'<div style="font-size:'+(a.head?'12px;color:var(--dim);font-weight:400':'13px;color:var(--tx);font-weight:700')+';margin:4px 0;white-space:normal">'+esc(a.line||"")+'</div>'+
 s.map(function(x){return '<div class="src" style="white-space:normal">'+x+'</div>';}).join("")+'</div>';}
 function list(acts){return (acts||[]).map(line).join("");}
 function reply(){if(!asked)return "";var L=((M.X.amsg||{}).messages||[]),q=null,r=null;

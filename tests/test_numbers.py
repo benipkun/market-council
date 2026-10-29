@@ -475,6 +475,7 @@ class Actions(unittest.TestCase):
         self.assertEqual(A.should_sell("OLD", self.year_ctx())[0]["type"], "SWAP")   # the sell answer agrees with the list
         self.assertIn("You do not hold NEW yet: this opens a new position of $100.00.", a["line"])
         self.assertNotIn("fill", a["line"])
+        self.assertEqual(a["head"], "Sell 10 OLD, buy 1 NEW with the money")   # the short headline the phone shows first
 
     def test_a_line_naming_a_position_you_do_not_have_is_not_shown(self):
         c = self.ctx()

@@ -40,11 +40,16 @@ jobs:
           for f in state/questions_eval.json state/logs/questions.txt state/agents; do [ -e "$f" ] && git add -A "$f"; done
           if ! git diff --cached --quiet; then
             git commit -q -m "Question tests $(date -u +%Y-%m-%dT%H:%MZ)"
+            # the copied code files are not part of this commit; left in place they stop the rebase (board cycle 1, Sam)
+            git reset -q --hard HEAD
+            pushed=0
             for i in 1 2 3; do
-              if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then break; fi
+              if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then pushed=1; break; fi
               git rebase --abort 2>/dev/null || true
               sleep 4
             done
+            [ "$pushed" = 1 ] || echo save > /tmp/failed
           fi
           exec >&3 2>&1
+          if grep -q save /tmp/failed 2>/dev/null; then echo "questions: the results could not be saved to the private records"; fi
           if [ -s /tmp/failed ]; then exit 1; fi

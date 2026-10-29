@@ -281,6 +281,7 @@ def buy_line(x, usd, ctx, pays):
     if not float(sh).is_integer():
         a["flags"].append("fraction of a share")
         a["line"] += " " + FRACTION
+    a["head"] = "Buy %s %s at up to $%.2f ($%s)" % (fmt_sh(sh), x["t"], x["limit"], money(cost))
     return a
 
 
@@ -386,6 +387,9 @@ def swap_for(x, s, ctx, why):
     a["line"] = "SWAP: sell %s %s at $%.2f (proceeds $%s after fees, %s), buy %s %s at limit $%.2f ($%s). Net cash %s$%s, fees $%.2f in all." % (
         fmt_sh(sn["shares"]), s, sn["limit"], money(sn["proceeds"]), sn["tax_note"], fmt_sh(b["shares"]), x["t"], x["limit"], money(b["usd"]),
         "+" if net >= 0 else "-", money(abs(net)), a["fees"])
+    if not float(b["shares"]).is_integer():
+        a["line"] += " " + FRACTION       # board cycle 1 (Rita): the swap line had dropped this note
+    a["head"] = "Sell %s %s, buy %s %s with the money" % (fmt_sh(sn["shares"]), s, fmt_sh(b["shares"]), x["t"])
     return a
 
 
