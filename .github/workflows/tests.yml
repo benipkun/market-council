@@ -25,7 +25,9 @@ jobs:
         run: python tests/test_numbers.py
       - name: Check every app script parses
         # board cycle 1: a broken quote in mc/p11.js stopped TODAY's action list for half an hour
-        run: for f in mc/*.js; do node --check "$f" || exit 1; done; echo "app scripts: all parse"
+        run: |
+          for f in mc/*.js; do node --check "$f" || exit 1; done
+          echo "app scripts parse"
       - name: Tell the phone if this job failed
         if: failure()
         env:
