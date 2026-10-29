@@ -1,0 +1,59 @@
+# Phone-size screenshots of every screen for the review board. The pictures hold private figures, so they go
+# into the private records (state/board/shots/latest) and never into this public repository or its logs.
+# Runs every Sunday before the board meets, when its own files change, and on request.
+name: Board screenshots
+on:
+  schedule:
+    - cron: "20 5 * * 0"
+  push:
+    branches: [main]
+    paths: ["ops/board_shots.js", ".github/workflows/board-shots.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: board-shots
+  cancel-in-progress: false
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch the private records
+        uses: actions/checkout@v4
+        with:
+          repository: benipkun/market-council-state
+          token: ${{ secrets.MC_TOKEN }}
+          ref: main
+      - name: Fetch this repository's code
+        uses: actions/checkout@v4
+        with:
+          path: _code
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install a headless browser
+        run: |
+          cd _code && npm install --no-save --silent playwright@1.48.2 > /dev/null 2>&1 && npx playwright install --with-deps chromium > /dev/null 2>&1
+          echo "browser: ready"
+      - name: Take the screenshots
+        env:
+          MC_TOKEN: ${{ secrets.MC_TOKEN }}
+        run: cd _code && node ops/board_shots.js /tmp/shots
+      - name: Save them in the private records
+        run: |
+          exec 3>&1 >/tmp/git.txt 2>&1
+          rm -rf state/board/shots/latest && mkdir -p state/board/shots/latest && cp /tmp/shots/* state/board/shots/latest/
+          git config user.name "Market Council Engine"
+          git config user.email "engine@market-council.local"
+          git add -A state/board/shots/latest
+          if ! git diff --cached --quiet; then
+            git commit -q -m "Board screenshots $(date -u +%Y-%m-%dT%H:%MZ)"
+            for i in 1 2 3; do
+              if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then break; fi
+              git rebase --abort 2>/dev/null || true
+              sleep 4
+            done
+          fi
+          exec >&3 2>&1
+          echo "saved"

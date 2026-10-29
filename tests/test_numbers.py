@@ -24,6 +24,7 @@ import plans as PL  # noqa: E402
 import keeper as K  # noqa: E402
 import answer as ANS  # noqa: E402
 import tradecheck as TC  # noqa: E402
+import board as BD  # noqa: E402
 import json  # noqa: E402
 import tempfile  # noqa: E402
 import quant as Q  # noqa: E402
@@ -613,6 +614,47 @@ class TradeCheck(unittest.TestCase):
         x = o["exposure"]
         self.assertAlmostEqual(sum(r["value"] for r in x["by_sector"]), 1000.0)     # every dollar is in one group, cash included
         self.assertEqual(x["unknown"], ["BBB"])
+
+
+class Board(unittest.TestCase):
+    def minutes(self, n, score, worst_ev="health.json: problems []"):
+        peers = [{"id": "p%d" % i, "name": "Peer %d" % i, "role": "r", "score": score, "checked": ["x"], "worst": {"text": "w", "evidence": worst_ev},
+                  "weak": "k", "fix": "f"} for i in range(12)]
+        return {"n": n, "date": "2026-10-%02d" % (20 + n), "peers": peers, "cross": [{"from": "a", "to": "b", "attack": "c"}] * 12,
+                "budget": {"limit": BD.BUDGET, "used": {"fixes": 2, "cards": 1, "minutes": 40}}, "fixes": [{"issue": "I1", "accepted": True}]}
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        BD.ROOT = self.d
+
+    def write(self, rel, o):
+        os.makedirs(os.path.dirname(os.path.join(self.d, rel)), exist_ok=True)
+        with open(os.path.join(self.d, rel), "w", encoding="utf-8") as f:
+            json.dump(o, f)
+
+    def test_minutes_need_twelve_reviews_with_evidence_and_the_budget(self):
+        m = self.minutes(1, 5)
+        self.assertEqual(BD.check_minutes(m), [])
+        m["peers"] = m["peers"][:11]
+        m["peers"][0]["worst"]["evidence"] = ""
+        m["budget"]["used"]["fixes"] = 9
+        probs = BD.check_minutes(m)
+        self.assertTrue(any("11 reviews" in x for x in probs) and any("no evidence" in x for x in probs) and any("over budget" in x for x in probs))
+
+    def test_a_happy_board_with_worse_results_is_flagged_and_the_message_has_no_amounts(self):
+        self.write("state/board/issues.json", {"issues": [{"id": "I1", "title": "Stop below $0 for one share", "severity": 4, "raised_by": ["a", "b"], "status": "open", "first_cycle": 1}]})
+        self.write("state/track.json", {"all": {"now": {"vs_spy": 0.02}}})
+        self.write("state/partners/statement.json", {"forecasts": {"error": 0.27}, "against_index": {"ahead_of_index": -50.0}})
+        self.write("state/board/cycles/1.json", self.minutes(1, 4))
+        r1, t1 = BD.close(1, "2026-10-21T08:00:00Z")
+        self.assertIsNone(r1["board_wrong"])
+        self.assertNotIn("$", t1)                                             # "Stop below $0" is not sent to the phone
+        self.write("state/track.json", {"all": {"now": {"vs_spy": -0.01}}})   # the ideas fell behind the index
+        self.write("state/board/cycles/2.json", self.minutes(2, 6))
+        r2, t2 = BD.close(2, "2026-10-28T08:00:00Z")
+        self.assertIn("ideas_vs_index", r2["board_wrong"])
+        self.assertIn("average 6.0/10 (+2.0)", t2)
+        self.assertEqual([c["n"] for c in json.load(open(os.path.join(self.d, "state/board/scoreboard.json")))["cycles"]], [1, 2])
 
 
 class Answers(unittest.TestCase):
