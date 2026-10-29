@@ -360,8 +360,13 @@ def swap_better(x, o, ctx):
     if a:
         a["margin"] = r2(o["margin"], 4)
         left = round(x["cap"] - a["usd"], 2)
+        if x["t"] in ctx["hold"]:
+            a["line"] += " You already hold $%s of %s; this adds to it." % (money(ctx["hold"][x["t"]]["value"]), x["t"])
+        else:
+            a["line"] += " You do not hold %s yet: this opens a new position of $%s." % (x["t"], money(a["usd"]))
         if left >= 10:
-            a["line"] += " Another $%s of %s from new money would fill it up to its limit." % (money(left), x["t"])
+            a["line"] += " Your risk profile allows up to $%s in %s, so up to $%s more could come from next month's money if it is still on the list then." % (
+                money(x["cap"]), x["t"], money(left))
     return a
 
 
@@ -447,6 +452,23 @@ def recent_buys(ledger):
                and e.get("ticker") and not e.get("undone_by") and str(e.get("at"))[:10] >= cut)
 
 
+HELD_REF = re.compile(r"(?:\b[Ss][Ee][Ll][Ll] [\d.]+ |\b[Yy]our |\bhold \$[\d,.]+ of |^HOLD )([A-Z][A-Z.]{0,5})\b")
+NOT_TICKERS = {"HUF", "USD", "EUR"}
+
+
+def check_lines(acts, ctx):
+    # every line is read back against the books before it is shown: naming a position you do not have removes the line
+    kept, bad = [], []
+    for a in acts:
+        names = set(m.group(1) for m in HELD_REF.finditer(a.get("line") or "")) - NOT_TICKERS
+        wrong = sorted(t for t in names if t not in ctx["hold"])
+        if wrong:
+            bad.append({"line": a.get("line"), "not_held": wrong})
+        else:
+            kept.append(a)
+    return kept, bad
+
+
 def number(acts):
     for i, a in enumerate(acts, 1):
         a["n"] = i
@@ -481,6 +503,8 @@ def today(ctx):
             acts.append(mark_tier(a, x))
             if x.get("sector"):
                 used[x["sector"]] = x["t"]
+    acts, bad = check_lines(acts, ctx)
+    ctx["self_check"] = bad
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx), ctx))
     acts += [hold_keep(t, ctx) for t in sorted(ctx["keeps"]) if t in ctx["hold"]]
@@ -499,7 +523,9 @@ def swap_options(cands, acts, ctx, n=3):
                 a = swap_better(x, o, ctx)
                 if a:
                     out.append(a)
-    out = sorted(out, key=lambda a: -a["margin"])[:n]
+    out, bad = check_lines(sorted(out, key=lambda a: -a["margin"]), ctx)
+    ctx["self_check"] = (ctx.get("self_check") or []) + bad
+    out = out[:n]
     for i, a in enumerate(out):
         a["n"], a["option"] = "ABC"[i], True
     return out
@@ -763,6 +789,8 @@ def run(now=None, dec=None, spy_price=None):
     sells = dict((t, should_sell(t, ctx)) for t in sorted(ctx["hold"]))
     out = {"as_of": now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "books_as_of": ctx["books_as_of"], "desk_as_of": ctx["desk_as_of"],
            "actions": acts, "swap_options": swap_options(cands, acts, ctx), "sell_answers": sells, "stale": ctx["stale"],
+           "self_check": {"rule": "every line that calls a share yours, sells it or holds it is read back against your books; a line that fails is not shown",
+                          "removed": ctx.get("self_check") or []},
            "monthly_answer": plan_amount(ctx["monthly_usd"], ctx) if ctx["monthly_usd"] else None,
            "inputs": {"cash": r2(ctx["cash"]), "free_cash": r2(ctx["free_cash"]), "nav": r2(ctx["nav"]), "usd_huf": r2(ctx["fx"], 4), "monthly_huf": ctx["monthly_huf"],
                       "monthly_usd": r2(ctx["monthly_usd"]), "fee_pct": FEE_PCT, "fee_min_usd": FEE_MIN, "min_order": MIN_ORDER, "tax_rate": TAX_RATE,

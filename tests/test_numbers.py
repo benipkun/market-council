@@ -469,6 +469,18 @@ class Actions(unittest.TestCase):
         self.assertIn("+8.0% for NEW against -10.0% for OLD", a["why_better"])
         self.assertGreaterEqual(a["margin"], A.SWAP_MARGIN)                     # 18 points less the switch costs
         self.assertEqual(A.should_sell("OLD", self.year_ctx())[0]["type"], "SWAP")   # the sell answer agrees with the list
+        self.assertIn("You do not hold NEW yet: this opens a new position of $100.00.", a["line"])
+        self.assertNotIn("fill", a["line"])
+
+    def test_a_line_naming_a_position_you_do_not_have_is_not_shown(self):
+        c = self.ctx()
+        kept, bad = A.check_lines([{"type": "BUY", "line": "BUY 1 NEW at limit $100.00. Diversification: same sector as your ZZZ (Tech)."},
+                                   {"type": "SWAP", "line": "SWAP: sell 2 GONE at $5.00, buy 1 NEW."},
+                                   {"type": "SWAP", "line": "SWAP: sell 10 OLD at $20.00, buy 1 NEW. Paid in HUF from your USD."}], c)
+        self.assertEqual([b["not_held"] for b in bad], [["ZZZ"], ["GONE"]])
+        self.assertEqual(len(kept), 1)
+        acts, _ = A.today(self.year_ctx())
+        self.assertEqual(A.check_lines(acts, self.year_ctx())[1], [])               # today's own lines pass
 
     def test_a_share_you_just_bought_is_not_swapped_away(self):
         acts, _ = A.today(self.year_ctx(recent_buys={"OLD"}))
