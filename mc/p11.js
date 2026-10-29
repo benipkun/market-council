@@ -14,7 +14,7 @@ function money(v){return v==null?DASH:"$"+Number(v).toLocaleString("en-US",{mini
 function pct(v){return v==null?DASH:Math.round(100*v)+"%";}
 var TAG={BUY:"live",SELL:"stale",SWAP:"lvl",HOLD:"paper"};
 function line(a){var s=[],f=a.forecast||{},p=a.portfolio||{},e=a.evidence||{};
-if(f.tp_first!=null)s.push("Forecaster: "+pct(f.tp_first)+" take-profit first, "+pct(f.stop_first)+" stop first by "+esc(f.due||DASH)+(f.beat_index!=null?", "+pct(f.beat_index)+" to beat the index fund over "+esc(f.beat_over||""):""));
+if(f.tp_first!=null)s.push((f.unproven_live?"Base rate (the Forecaster is unproven live): ":"Forecaster: ")+pct(f.tp_first)+" take-profit first, "+pct(f.stop_first)+" stop first by "+esc(f.due||DASH)+(f.beat_index!=null?", "+pct(f.beat_index)+" to beat the index fund over "+esc(f.beat_over||""):""));
 if(a.expected_usd!=null)s.push("Expected after fees <b style=\"color:var(--tx)\">"+(a.expected_usd<0?"-":"+")+money(Math.abs(a.expected_usd))+"</b>"+(a.index_usd!=null?" "+DOT+" same money in the index fund "+(a.index_usd<0?"-":"+")+money(Math.abs(a.index_usd)):"")+(a.if_take_profit!=null?" "+DOT+" at take-profit "+money(a.if_take_profit)+" "+DOT+" at stop "+money(a.if_stop):" "+esc(a.expected_note||"")));
 if(a.type==="SWAP"&&a.why_better)s.push("Why "+esc((a.buy||{}).ticker)+" over "+esc((a.sell||{}).ticker)+": "+esc(a.why_better));
 var pp=[];if(p.largest)pp.push("largest holding after: "+esc(p.largest.t)+" "+pct(p.largest.share));if(p.bad_year!=null&&p.bad_year_now!=null)pp.push("bad year "+(100*p.bad_year).toFixed(1)+"% (now "+(100*(p.bad_year_now||0)).toFixed(1)+"%)");

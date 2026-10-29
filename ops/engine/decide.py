@@ -1465,6 +1465,8 @@ def main():
         if x.get("kind") != "idea" or not v:
             continue
         x["verdict"] = v
+        if x.get("forecast_line") and not actions.LIVE_PROVEN and "unproven live" not in x["forecast_line"]:
+            x["forecast_line"] += " (unproven live: its live record is not yet better than always saying 50%)"
         x.setdefault("greyed", False)
         x.setdefault("grey_reason", None)
         if not v["buy"]:

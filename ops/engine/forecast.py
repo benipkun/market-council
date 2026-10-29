@@ -358,13 +358,13 @@ def summarise(P, O, PL, labels=None):
 
 # ---------------------------------------------------------------- the back-test of the method itself
 def backtest(shares, ctx, tab, per, targets, rf, load, save):
-    key = "%s|v%d|%d" % (ctx["cal"][-1][:7], VERSION, len(shares))
+    key = "%s|v%d|%d|halves" % (ctx["cal"][-1][:7], VERSION, len(shares))
     old = load("fc_backtest.json")
     if old and old.get("key") == key:
         return old["out"]
     rng, spy, cal = np.random.default_rng(SEED + 7), ctx["spy"], ctx["cal"]
     pick = [s for s in shares if s["t"] in targets] + [s for k, s in enumerate(shares) if k % 6 == 0 and s["t"] not in targets]
-    P_, O_, PL_, K_ = [], [], [], []
+    P_, O_, PL_, K_, D_ = [], [], [], [], []
     first, last, used = None, None, 0
     for s in pick:
         x, n, cells = s["x"], len(s["x"]), per.get(s["t"])
@@ -388,13 +388,21 @@ def backtest(shares, ctx, tab, per, targets, rf, load, save):
                 pl, npl, _ = base_rates(tab, h, d, None, g)
                 for k in KINDS:
                     f = combine(sp[k], br[k], nb, mo, None)
-                    P_.append(f["p"]); O_.append(int(ev[k][0])); PL_.append(pl[k] if pl[k] is not None else 0.5); K_.append(k + " " + h)
+                    P_.append(f["p"]); O_.append(int(ev[k][0])); PL_.append(pl[k] if pl[k] is not None else 0.5); K_.append(k + " " + h); D_.append(str(cal[g])[:10])
                 if h == "3m":
                     a, b = touch_first(Pm, 1.10, 0.90)
                     ra, rb = touch_first(Pr, 1.10, 0.90)
                     f = combine(float(np.mean(a)), None, 0, 0, None)
-                    P_.append(f["p"]); O_.append(int(ra[0])); PL_.append(0.5); K_.append("up 10% before down 10% 3m")
+                    P_.append(f["p"]); O_.append(int(ra[0])); PL_.append(0.5); K_.append("up 10% before down 10% 3m"); D_.append(str(cal[g])[:10])
     out = summarise(P_, O_, PL_, K_)
+    # card B2: the same score in two halves of the period, to see whether the live gap also shows out of sample
+    halves = {}
+    for name, sel in (("before_mid_2019", [d < "2019-07-01" for d in D_]), ("from_mid_2019", [d >= "2019-07-01" for d in D_])):
+        ix = [i for i, v in enumerate(sel) if v]
+        if ix:
+            h_ = summarise([P_[i] for i in ix], [O_[i] for i in ix], [PL_[i] for i in ix])
+            halves[name] = dict((k, h_.get(k)) for k in ("n", "brier", "brier_fifty", "brier_plain", "beats_fifty", "beats_plain"))
+    out["halves"] = halves
     out.update({"shares": used, "from": first, "to": last, "runs": BT_RUNS,
                 "method": "The same code made forecasts at one date every three months over the last twelve years for %d shares, using only prices up to that date and only past cases that had fully played out by then. Each forecast was then compared with what happened." % used,
                 "limits": ["The shares are today's large companies: firms that failed or were taken over are missing, which flatters \"higher than today\" and understates big falls.",

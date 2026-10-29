@@ -72,6 +72,12 @@ def shares_for(usd, price):
 HWORDS = {"1m": "a month", "3m": "three months", "1y": "a year", "by": "the card's date"}
 
 
+# card B2 (Ben's yes, 29 Oct 2026): until the Forecaster's live error beats always saying 50% on at least 100 checked
+# forecasts, its odds are shown as unproven live and the action list ranks with the plain base rate for the same setup.
+LIVE_PROVEN = True
+LIVE_MIN = 100
+
+
 def fct_for(fct, t):
     f = (fct or {}).get(t) or {}
     if not f or f.get("none"):
@@ -83,7 +89,10 @@ def fct_for(fct, t):
     tp, sp = fh.get("tp_first") or {}, fh.get("stop_first") or {}
     beat = fh.get("beat") or ((h.get("1m") or {}).get("f") or {}).get("beat") or {}
     bh = hk if fh.get("beat") else "1m"
-    return {"tp_first": tp.get("p"), "stop_first": sp.get("p"), "beat_index": beat.get("p"), "beat_over": HWORDS.get(bh, bh), "horizon": hk,
+    k = "p" if LIVE_PROVEN else "base"
+    pick = lambda d: d.get(k) if d.get(k) is not None else d.get("p")
+    return {"tp_first": pick(tp), "stop_first": pick(sp), "beat_index": pick(beat), "beat_over": HWORDS.get(bh, bh), "horizon": hk,
+            "unproven_live": not LIVE_PROVEN, "forecaster_tp_first": tp.get("p"),
             "due": (h.get(hk) or {}).get("due") or plan.get("due"), "cases": tp.get("cases"), "few": bool(tp.get("few")),
             "range": [tp.get("lo"), tp.get("hi")] if tp else None}
 
@@ -160,6 +169,8 @@ def candidates(ctx):
         room = float(lim.get("stock_cap") or 0.3) * nav - (hold.get(t) or {}).get("value", 0.0)
         cap = max(0.0, min(cap, room)) if cap else max(0.0, room)
         held_back, flags, disagree = [], [], []
+        if fc and fc.get("unproven_live"):
+            flags.append("forecaster unproven live")
         if c.get("greyed"):
             held_back.append(c.get("grey_reason") or "held back by the desk")
         pc = c.get("price_check") or {}
@@ -403,8 +414,9 @@ def hold_keep(t, ctx):
                        "bad_year": pfk.get("bad_as_held"), "bad_year_at_cap": pfk.get("bad_at_cap")}}
     hp = (ctx["holds"].get(t) or {})
     floor = next((l.get("price") for l in hp.get("levels") or [] if "Maximum-loss" in str(l.get("name"))), None)
-    a["line"] = "HOLD %s: your decision. Target $%s by %s; the model gives %s to touch it first." % (
-        t, money(k.get("target")), k.get("by"), ("%d%%" % round(100 * k["chance_touch"])) if k.get("chance_touch") is not None else "no figure")
+    a["line"] = "HOLD %s: your decision. Target $%s by %s; the model gives %s to touch it first%s." % (
+        t, money(k.get("target")), k.get("by"), ("%d%%" % round(100 * k["chance_touch"])) if k.get("chance_touch") is not None else "no figure",
+        "" if LIVE_PROVEN else " (unproven live)")
     eff = []
     if pfk.get("share") and pfk.get("cap"):
         eff.append("it is %d%% of the portfolio against your %d%% limit" % (round(100 * pfk["share"]), round(100 * pfk["cap"])))
@@ -427,7 +439,9 @@ def build_ctx(dec=None):
     contrib = rj("state/contribution.json", {}) or {}
     health = rj("state/health.json", {}) or {}
     fee_cfg = (dec.get("desk") or {}).get("fee") or {}
-    global FEE_PCT, FEE_MIN
+    global FEE_PCT, FEE_MIN, LIVE_PROVEN
+    lf = (rj("state/partners/statement.json", {}) or {}).get("forecasts") or {}
+    LIVE_PROVEN = bool((lf.get("checked") or 0) >= LIVE_MIN and lf.get("error") is not None and lf.get("error_always_50") is not None and lf["error"] < lf["error_always_50"])
     # a fee of exactly 0 is a real setting, so only a missing value falls back to the default
     FEE_PCT = float(fee_cfg["pct"]) if fee_cfg.get("pct") is not None else FEE_PCT
     FEE_MIN = float(fee_cfg["min_usd"]) if fee_cfg.get("min_usd") is not None else FEE_MIN
@@ -751,7 +765,7 @@ def text(ans):
         extra = []
         fc = a.get("forecast") or {}
         if fc.get("tp_first") is not None:
-            extra.append("Forecaster: %d%% take-profit first, %d%% stop first by %s" % (round(100 * fc["tp_first"]), round(100 * (fc.get("stop_first") or 0)), fc.get("due")))
+            extra.append(("Base rate (the Forecaster is unproven live): " if fc.get("unproven_live") else "Forecaster: ") + "%d%% take-profit first, %d%% stop first by %s" % (round(100 * fc["tp_first"]), round(100 * (fc.get("stop_first") or 0)), fc.get("due")))
         if a.get("expected_usd") is not None and a.get("if_take_profit") is not None:
             extra.append("expected after fees %s$%s, the same money in the index fund %s$%s (at take-profit %s, at stop %s)" % (
                 "+" if a["expected_usd"] >= 0 else "-", money(abs(a["expected_usd"])), "+" if (a.get("index_usd") or 0) >= 0 else "-", money(abs(a.get("index_usd") or 0)),

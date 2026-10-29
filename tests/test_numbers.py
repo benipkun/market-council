@@ -477,6 +477,18 @@ class Actions(unittest.TestCase):
         self.assertNotIn("fill", a["line"])
         self.assertEqual(a["head"], "Sell 10 OLD, buy 1 NEW with the money")   # the short headline the phone shows first
 
+    def test_an_unproven_forecaster_gives_way_to_the_base_rate(self):
+        c = self.ctx()
+        c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["base"] = 0.2                  # the plain base rate for the same setup
+        try:
+            A.LIVE_PROVEN = False
+            x = A.candidates(c)[0]
+            self.assertEqual((x["fc"]["tp_first"], x["fc"]["forecaster_tp_first"]), (0.2, 0.5))
+            self.assertIn("forecaster unproven live", x["flags"])
+            self.assertIn("(unproven live)", A.hold_keep("KEEP", c)["line"])
+        finally:
+            A.LIVE_PROVEN = True
+
     def test_a_line_naming_a_position_you_do_not_have_is_not_shown(self):
         c = self.ctx()
         kept, bad = A.check_lines([{"type": "BUY", "line": "BUY 1 NEW at limit $100.00. Diversification: same sector as your ZZZ (Tech)."},
@@ -749,6 +761,21 @@ class Plans(unittest.TestCase):
         self.assertEqual((k["stop"], k["take_profit"], k["until"], k["kept"]), (31.5, 80.0, "2027-10-05", True))
         capped = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 40.0}]}, None, "long", [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 15))
         self.assertEqual(capped["stop"], 40.0)                                  # never past the maximum-loss line
+
+    def test_card_b1_alarm_only_plans(self):
+        halves = lambda a, b: {"rules": [{"id": "medium", "halves": {"before_2013": {"cases": 5000, "with_plan": a, "without_plan": 0.07},
+                                                                      "from_2013": {"cases": 5000, "with_plan": b, "without_plan": 0.08}}}]}
+        self.assertTrue(PL.alarm_mode(halves(0.05, 0.06)))                      # holding beat the plan in both halves
+        self.assertFalse(PL.alarm_mode(halves(0.05, 0.09)))                     # not in the second half: no change
+        self.assertFalse(PL.alarm_mode({}))                                      # no split yet: no change
+        p = {"ticker": "AAA", "qty": 10, "last_price": 50.0, "market_value": 500.0, "cost_basis": 450.0}
+        x = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}, None, "long", [("d", 50.0)] * 30, {}, 1000.0, None,
+                            datetime.date(2026, 10, 30), True)
+        self.assertEqual((x["stop"], x["alarm_only"]), (31.5, True))
+        self.assertTrue(any("No stop order to place" in s for s in x["revolut"]))
+        short = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}, None, "short", [("d", 50.0)] * 30, {}, 1000.0, None,
+                                datetime.date(2026, 10, 30), True)
+        self.assertFalse(short["alarm_only"])                                    # short-term plans are unchanged
 
     def test_a_very_jumpy_share_never_gets_a_stop_below_zero(self):
         # FISN, 29 Oct 2026: no price history, so no maximum-loss level, and a movement-based stop of -$1.28

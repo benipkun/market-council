@@ -941,7 +941,7 @@ def main():
     # the order plans' stop and take-profit rules, tested on the same price history
     try:
         import plans
-        bt = plans.backtest(shares)
+        bt = plans.backtest(shares, cal=ctx["cal"])
         bt["as_of"] = out["as_of"]
         E.wj("state/plans_backtest.json", bt)
         out["plans_backtest"] = len(bt.get("rules") or [])

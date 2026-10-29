@@ -88,17 +88,21 @@ def forecast_for(fct, t, stop, tp):
     return {"tp_first": a.get("p"), "stop_first": b.get("p"), "range": [a.get("lo"), a.get("hi")], "cases": a.get("cases"), "few": bool(a.get("few")), "due": plan.get("due")}
 
 
-def revolut_steps(t, shares, limit, stop, tp, until, held):
+def revolut_steps(t, shares, limit, stop, tp, until, held, alarm=False):
     n = "%s share%s" % (("%g" % shares), "" if shares == 1 else "s")
     s = []
     if not held:
         s.append("Buy: Revolut > Invest > %s > Buy > Limit order. Limit price $%.2f, %s, expiry %s. Review and confirm." % (t, limit, n, until))
+    if alarm:
+        s.append("Maximum-loss alarm: set a price alert for %s at $%.2f. No stop order to place: if it closes below, your rules raise a sell card." % (t, stop))
+        s.append("Take-profit alert: set a price alert for %s at $%.2f to review the position. No sell order to place." % (t, tp))
+        return s
     s.append("Stop-loss: %s > Sell > Stop order. Stop price $%.2f, %s. It becomes a market order at $%.2f, in regular US hours only." % (t, stop, n, stop))
     s.append("Take-profit: set a price alert for %s at $%.2f. When it rings, cancel the stop order and sell %s with a limit order at $%.2f." % (t, tp, n, tp))
     return s
 
 
-def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today):
+def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today, alarm=False):
     t = p["ticker"]
     price = float(p.get("last_price") or 0)
     mv = float(p.get("market_value") or 0)
@@ -107,6 +111,7 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today):
         return None
     avg = float(p.get("cost_basis") or 0) / qty if qty else None
     same = prev and prev.get("label") == label
+    alarm_on = False
     # your maximum-loss line; a share with no price history yet has no projection, so the line is worked out from your cost
     floor = next((lv.get("price") for lv in (hold or {}).get("levels") or [] if str(lv.get("name") or "").startswith("Maximum-loss")), None)
     if not floor and avg:
@@ -127,6 +132,9 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today):
         tp, tp_why = round(price + 2 * (price - stop), 2), "twice the stop distance above today's price"
         until = prev.get("until") if same and prev.get("until") else (today + datetime.timedelta(days=LABELS[label]["days"])).isoformat()
         why_until = "the %s window (%s)" % (LABELS[label]["name"], LABELS[label]["words"])
+        if alarm and label in ("medium", "long") and floor and float(floor) < stop:
+            stop, stop_why, alarm_on = round(float(floor), 2), ALARM_WHY, True
+            tp_why += "; a price alert only, not an order to place"
     initial = float(prev["initial_stop"]) if same and prev.get("initial_stop") else stop
     loss = qty * (price - stop) + fee(qty * stop)
     fc = forecast_for(fct, t, stop, tp)
@@ -138,7 +146,8 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today):
             "gain_at_take_profit": r2(qty * (tp - price) - fee(qty * tp)), "reward_risk": r2(up / dn, 2) if dn > 0 else None,
             "until": until, "until_why": why_until, "forecast": fc, "expected_after_fees": r2(exp),
             "forecast_note": None if fc else "The Forecaster works out the chances for these levels in its next nightly run.",
-            "revolut": revolut_steps(t, float(math.floor(qty)) if qty >= 1 else qty, price, stop, tp, until, True)}
+            "alarm_only": alarm_on,
+            "revolut": revolut_steps(t, float(math.floor(qty)) if qty >= 1 else qty, price, stop, tp, until, True, alarm_on)}
     if not float(qty).is_integer():
         plan["fraction_note"] = ("You hold %g shares. Revolut limit orders take whole shares only, so the orders above cover %d; the remaining %g of a share is sold with a market order "
                                  "when a level is reached. If the app also takes the fraction in the stop order, include it there.") % (qty, math.floor(qty), round(qty - math.floor(qty), 6))
@@ -201,9 +210,9 @@ def watch(plans, prev, holds, today):
                            "text": "%s closed at or under its stop ($%.2f)%s." % (t, p["stop"], ": your rules raise a sell card" if p.get("kept") else ": sell, or write down why you keep it")})
         if p.get("take_profit") and price >= p["take_profit"]:
             events.append({"type": "hit", "id": p["id"], "key": "hit-tp:%s:%s" % (p["id"], p["take_profit"]),
-                           "text": "%s reached its take-profit ($%.2f)%s." % (t, p["take_profit"], ": your target, review your decision" if p.get("kept") else ": sell with a limit order, or move the stop up")})
+                           "text": "%s reached its take-profit ($%.2f)%s." % (t, p["take_profit"], ": your target, review your decision" if p.get("kept") else (": review the position (an alert, not an order)" if p.get("alarm_only") else ": sell with a limit order, or move the stop up"))})
         avg, first = p.get("average_cost"), p.get("initial_stop")
-        if not p.get("kept") and avg and first and avg > first and price >= avg + (avg - first) and p["stop"] < avg:
+        if not p.get("kept") and not p.get("alarm_only") and avg and first and avg > first and price >= avg + (avg - first) and p["stop"] < avg:
             events.append({"type": "move", "id": p["id"], "key": "move:%s:%s" % (p["id"], r2(avg)),
                            "text": "Move the stop on %s up to $%.2f, your average cost: it is up by its first risk (trailing rule)." % (t, avg)})
             p["stop_should_be"] = r2(avg)
@@ -240,6 +249,7 @@ def run(now, dec, answers=None, push=None):
     labels = chosen_labels(answers, prev.get("labels"))
     today = day(now)
     old = dict((p["id"], p) for p in prev.get("holdings") or [] if p.get("id"))
+    alarm = alarm_mode(E.rj("state/plans_backtest.json", {}) or {})
     hp = []
     for p in snap.get("positions") or []:
         t = p.get("ticker")
@@ -247,7 +257,7 @@ def run(now, dec, answers=None, push=None):
             continue
         pid = "H:" + t
         lab = (labels.get(pid) or {}).get("label") or default_label(pid, t in keeps)
-        x = holding_plan(p, holds.get(t), keeps.get(t), lab, E.read_cache(t), fct, nav, old.get(pid), today)
+        x = holding_plan(p, holds.get(t), keeps.get(t), lab, E.read_cache(t), fct, nav, old.get(pid), today, alarm)
         if x:
             hp.append(x)
     ip = []
@@ -276,7 +286,20 @@ def run(now, dec, answers=None, push=None):
     return out
 
 
-def backtest(shares, step=5, cost=COST):
+ALARM_WHY = ("your maximum-loss line, kept as an alarm only: on 25 years of prices the medium-term stop and take-profit made less than "
+             "simply holding, before 2013 and from 2013 alike (board card B1, your yes on 29 Oct 2026)")
+
+
+def alarm_mode(bt):
+    # card B1: medium and long plans keep only the maximum-loss alarm, but only if holding beat the plan in both halves of the history
+    r = next((x for x in (bt or {}).get("rules") or [] if x.get("id") == "medium"), None)
+    hv = (r or {}).get("halves") or {}
+    a, b = hv.get("before_2013") or {}, hv.get("from_2013") or {}
+    ok = all((h.get("cases") or 0) >= 1000 and h.get("without_plan") is not None and h.get("with_plan") is not None and h["without_plan"] > h["with_plan"] for h in (a, b))
+    return bool(ok)
+
+
+def backtest(shares, step=5, cost=COST, cal=None):
     # every fifth trading day of every share: enter at the close, stop and take-profit by the rule, exit at whichever is
     # reached first (the stop at that day's close, so a gap shows), or at the time limit; against simply holding the
     # same days. Prices only; dividends left out; today's survivors only, so results are flattered.
@@ -285,7 +308,7 @@ def backtest(shares, step=5, cost=COST):
     for lab in ("short", "medium"):
         h = LABELS[lab]
         T, w = h["trading_days"], h["vol_days"]
-        plan_r, hold_r, outcome, rec, gaps = [], [], [], [], []
+        plan_r, hold_r, outcome, rec, gaps, when = [], [], [], [], [], []
         for s in shares:
             x = np.asarray(s.get("x"), dtype=float)
             if x.size < 300 or not np.all(np.isfinite(x)) or np.any(x <= 0):
@@ -314,6 +337,7 @@ def backtest(shares, step=5, cost=COST):
                 plan_r.append(ex / p0[j] - 1 - cost)
                 hold_r.append(path[j, -1] / p0[j] - 1 - cost)
                 outcome.append(o)
+                when.append(str(cal[s["a"] + int(idx[j])])[:10] if cal is not None and s.get("a") is not None else None)
         n = len(plan_r)
         if not n:
             continue
@@ -327,6 +351,14 @@ def backtest(shares, step=5, cost=COST):
                       "gapped_past_stop": r2(float((g > 0.02).mean()), 3) if st else None, "average_gap": r2(float(g.mean()), 4) if st else None,
                       "verdict": ("With the plan the average case did %s than simply holding the same days, after costs (%+.2f%% against %+.2f%%)." % (
                           "better" if pr.mean() > hr.mean() else "worse", 100 * pr.mean(), 100 * hr.mean())) if n >= 20 else "Too few cases to rely on."})
+        # card B1: the same test in two halves of history, so a result is not just one period
+        if any(when):
+            wa = np.array([w or "" for w in when])
+            halves = {}
+            for name, m in (("before_2013", (wa != "") & (wa < "2013-01-01")), ("from_2013", wa >= "2013-01-01")):
+                k = int(m.sum())
+                halves[name] = {"cases": k, "with_plan": r2(float(pr[m].mean()), 4) if k else None, "without_plan": r2(float(hr[m].mean()), 4) if k else None}
+            rules[-1]["halves"] = halves
     return {"rules": rules, "cost": cost,
             "method": "Every fifth trading day of every share in the back-check list since 2000 is a test entry at that day's close. The stop and take-profit follow the rule; the exit is whichever is reached first, the stop at that day's close (so gaps past the stop count), the take-profit at its price, otherwise the close at the time limit. Without the plan means holding the same days. Every result is after half a percent for buying and selling.",
             "honesty": "Entries are a fixed calendar, not the signals that raise cards, so this tests the stop and take-profit rule, not when to buy. Prices only: dividends are left out. The list is today's largest companies, so every share survived; that flatters holding more than stopping out. Neighbouring entries overlap, so cases are not independent."}
