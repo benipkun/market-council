@@ -57,11 +57,14 @@ def daily_vol(closes, n=20):
     return math.sqrt(sum((x - m) ** 2 for x in r) / (len(r) - 1))
 
 
+MAX_LOSS = 0.30   # the risk profile's maximum loss; run() reads it from the profile
+
+
 def stop_level(price, closes, label):
     # normal movement first, then the nearest past low if it sits close to that line
     h = LABELS[label]
     v = daily_vol(closes) or 0.02
-    dist = max(0.05, 2 * v * math.sqrt(h["vol_days"]))
+    dist = min(0.9, max(0.05, 2 * v * math.sqrt(h["vol_days"])))   # a stop is always above zero
     line = price * (1 - dist)
     lows = [float(c) for d, c in closes[-h["low_days"]:] if c]
     low = min(lows) if lows else None
@@ -104,17 +107,21 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today):
         return None
     avg = float(p.get("cost_basis") or 0) / qty if qty else None
     same = prev and prev.get("label") == label
+    # your maximum-loss line; a share with no price history yet has no projection, so the line is worked out from your cost
+    floor = next((lv.get("price") for lv in (hold or {}).get("levels") or [] if str(lv.get("name") or "").startswith("Maximum-loss")), None)
+    if not floor and avg:
+        floor = round(avg * (1 - MAX_LOSS), 2)
+    if prev and float(prev.get("stop") or 0) <= 0:
+        prev = dict(prev, stop=None, initial_stop=None)       # a stop at or below zero was a mistake and is not kept
     if keep:
-        floor = next((lv.get("price") for lv in (hold or {}).get("levels") or [] if str(lv.get("name") or "").startswith("Maximum-loss")), None)
-        stop, stop_why = (round(float(floor), 2), "your maximum-loss line (30% under your average cost); your rules raise a sell card below it") if floor else stop_level(price, closes, label)
+        stop, stop_why = (round(float(floor), 2), "your maximum-loss line (%d%% under your average cost); your rules raise a sell card below it" % round(100 * MAX_LOSS)) if floor else stop_level(price, closes, label)
         tp, tp_why = float(keep["target"]), "your own target"
         until, why_until = str(keep.get("by") or "")[:10], "your review date"
     else:
         stop, stop_why = stop_level(price, closes, label)
         # never past your maximum loss: the stop sits no lower than your maximum-loss line
-        floor = next((lv.get("price") for lv in (hold or {}).get("levels") or [] if str(lv.get("name") or "").startswith("Maximum-loss")), None)
         if floor and float(floor) > stop:
-            stop, stop_why = round(float(floor), 2), "your maximum-loss line (30%% under your average cost); the normal-movement stop ($%.2f) would sit below it" % stop
+            stop, stop_why = round(float(floor), 2), "your maximum-loss line (%d%% under your average cost); the normal-movement stop ($%.2f) would sit below it" % (round(100 * MAX_LOSS), stop)
         if same and prev.get("stop") and float(prev["stop"]) > stop:
             stop, stop_why = float(prev["stop"]), "kept from the earlier plan: a stop is never lowered"
         tp, tp_why = round(price + 2 * (price - stop), 2), "twice the stop distance above today's price"
@@ -218,6 +225,8 @@ def watch(plans, prev, holds, today):
 
 
 def run(now, dec, answers=None, push=None):
+    global MAX_LOSS
+    MAX_LOSS = float((dec.get("profile") or {}).get("max_loss_pct") or 30) / 100.0
     global FEE_PCT, FEE_MIN
     fc_ = (dec.get("desk") or {}).get("fee") or {}
     FEE_PCT = float(fc_["pct"]) if fc_.get("pct") is not None else FEE_PCT

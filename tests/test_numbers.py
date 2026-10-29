@@ -23,6 +23,9 @@ import partners as P  # noqa: E402
 import plans as PL  # noqa: E402
 import keeper as K  # noqa: E402
 import answer as ANS  # noqa: E402
+import tradecheck as TC  # noqa: E402
+import json  # noqa: E402
+import tempfile  # noqa: E402
 import quant as Q  # noqa: E402
 import strategy as S  # noqa: E402
 import track as T  # noqa: E402
@@ -581,6 +584,37 @@ class CardsFollowTrades(unittest.TestCase):
         self.assertEqual([x["key"] for x in out if x["status"] == "open"], ["RULE:dip:CCC"])
 
 
+class TradeCheck(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        TC.ROOT = self.d
+
+        def w(rel, o):
+            os.makedirs(os.path.dirname(os.path.join(self.d, rel)), exist_ok=True)
+            with open(os.path.join(self.d, rel), "w", encoding="utf-8") as f:
+                json.dump(o, f)
+        w("treasury/snapshot.json", {"as_of": "2026-10-29T10:00:00Z", "nav": 1000.0, "cash": 10.0, "positions": [
+            {"ticker": "AAA", "qty": 2, "market_value": 590.0, "last_price": 295.0, "cost_basis": 600.0},
+            {"ticker": "BBB", "qty": 10, "market_value": 400.0, "last_price": 40.0, "cost_basis": 380.0}]})
+        w("treasury/ledger.json", {"entries": [
+            {"id": "T1", "at": "2026-10-29T09:00:00Z", "action": "buy", "ticker": "AAA", "usd": 600.0, "qty": 2, "price": 30.0, "status": "applied", "cash_after": 10.0, "why": "my own"},
+            {"id": "T2", "at": "2026-10-29T08:00:00Z", "action": "buy", "ticker": "CCC", "usd": 50.0, "qty": 1, "price": 50.0, "status": "applied", "cash_after": 610.0}]})
+        w("state/decisions.json", {"profile": {"limits": {"stock_cap": 0.3, "risk_per_trade": 0.015, "min_cash": 0.03}}, "cards": []})
+        w("state/classes.json", {"AAA": {"type": "Stock", "sector": "Energy", "country": "US"}})
+
+    def test_a_trade_is_checked_and_classified(self):
+        o = TC.run("2026-10-29T10:00:00Z", phone=False)
+        t = dict((x["ticker"], x) for x in o["trades"])
+        c = dict((x["name"], x["status"]) for x in t["AAA"]["checks"])
+        # $30 typed against a $295 price; 59% of the portfolio against a 30% limit; $10 cash under the $30 buffer; Energy 59%
+        self.assertEqual((c["books"], c["price"], c["size"], c["cash"], c["sector"], c["risk"]), ("ok", "warn", "warn", "warn", "warn", "warn"))
+        self.assertEqual((t["AAA"]["status"], t["AAA"]["class"]["country"], t["AAA"]["origin"]), ("warn", "United States", "your own idea (my own)"))
+        self.assertEqual(t["CCC"]["status"], "fail")                                # in the ledger, not in the holdings
+        x = o["exposure"]
+        self.assertAlmostEqual(sum(r["value"] for r in x["by_sector"]), 1000.0)     # every dollar is in one group, cash included
+        self.assertEqual(x["unknown"], ["BBB"])
+
+
 class Answers(unittest.TestCase):
     FACTS = {"books": {"cash": 366.58, "positions": [{"ticker": "UBER", "weight": 0.5466, "price": 67.62}]}, "risk_profile": {"limits": {"stock_cap": 0.3}},
              "portfolio_forecast": {"1y": {"port_loss": 0.487, "port_max": 0.19}}, "question": ""}
@@ -672,6 +706,15 @@ class Plans(unittest.TestCase):
         self.assertEqual((k["stop"], k["take_profit"], k["until"], k["kept"]), (31.5, 80.0, "2027-10-05", True))
         capped = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 40.0}]}, None, "long", [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 15))
         self.assertEqual(capped["stop"], 40.0)                                  # never past the maximum-loss line
+
+    def test_a_very_jumpy_share_never_gets_a_stop_below_zero(self):
+        # FISN, 29 Oct 2026: no price history, so no maximum-loss level, and a movement-based stop of -$1.28
+        PL.MAX_LOSS = 0.30                                                      # the profile's maximum loss (run() sets it)
+        PL.daily_vol = lambda closes, n=20: 0.30                                # 30% a day: twice its movement is past zero
+        p = {"ticker": "JMP", "last_price": 3.31, "market_value": 38.23, "qty": 11.55445544, "cost_basis": 35.0}
+        closes = [("d%d" % i, 3.0 if i % 2 else 6.0) for i in range(40)]
+        x = PL.holding_plan(p, {}, None, "long", closes, {}, 1148.0, {"label": "long", "stop": -1.28, "initial_stop": -1.29}, datetime.date(2026, 10, 29))
+        self.assertEqual((x["stop"], x["initial_stop"]), (2.12, 2.12))          # 30% under the $3.03 average cost
 
     def test_the_trailing_rule(self):
         p = {"id": "H:AAA", "ticker": "AAA", "price": 56.0, "stop": 45.0, "take_profit": 70.0, "average_cost": 50.0, "initial_stop": 45.0,

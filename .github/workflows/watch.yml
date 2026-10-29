@@ -39,19 +39,23 @@ jobs:
         run: |
           # when the records token expires (GitHub sends the date with every answer); kept out of this public log
           export TOKEN_EXPIRES=$(curl -sI -m 20 -H "Authorization: Bearer $MC_TOKEN" https://api.github.com/rate_limit | tr -d '\r' | awk -F': ' 'tolower($1)=="github-authentication-token-expiration"{print $2}')
-          mkdir -p ops/engine state/logs && cp _code/ops/health.py ops/ && cp _code/ops/engine/actions.py _code/ops/engine/keeper.py _code/ops/engine/answer.py _code/ops/engine/agent_questions.md ops/engine/
+          mkdir -p ops/engine state/logs && cp _code/ops/health.py ops/ && cp _code/ops/engine/actions.py _code/ops/engine/keeper.py _code/ops/engine/answer.py _code/ops/engine/agent_questions.md _code/ops/engine/tradecheck.py ops/engine/
           if python3 ops/health.py > /tmp/health.txt 2>&1; then echo "health: checked"; else echo "health: FAILED (details in the private records, state/logs/health.txt)"; echo health >> /tmp/failed; fi
           # questions the Trade Inbox has not answered within 20 minutes are answered by the action list's own code
           python3 ops/engine/keeper.py asks > /tmp/keeper.txt 2>&1 || echo "keeper: FAILED" >> /tmp/keeper.txt
           echo "keeper: ran"
-          if [ -s /tmp/failed ] || [ -n "$(git status --porcelain state/health.json outbox inbox/queue state/messages.json)" ]; then
+          # a trade that just reached the books: checked, classified, and one phone message (the relay starts this job)
+          python3 ops/engine/tradecheck.py > /tmp/tradecheck.txt 2>&1 || echo "tradecheck: FAILED" >> /tmp/keeper.txt
+          echo "trade check: ran"
+          EXPO=""; [ -e state/exposure.json ] && EXPO=state/exposure.json
+          if [ -s /tmp/failed ] || [ -n "$(git status --porcelain state/health.json outbox inbox/queue state/messages.json $EXPO)" ]; then
             { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/health.txt; } > state/logs/health.txt
             # Git's own messages can name files, so they stay out of this public log.
             exec 3>&1 >/tmp/git.txt 2>&1
             git config user.name "Market Council Engine"
             git config user.email "engine@market-council.local"
             # inbox, not inbox/queue: an empty queue folder does not exist in git, and adding a missing path fails the step
-            git add -A state/health.json state/logs/health.txt outbox inbox state/messages.json state/keeper.json
+            git add -A state/health.json state/logs/health.txt outbox inbox state/messages.json state/keeper.json $EXPO
             if ! git diff --cached --quiet; then
               git commit -q -m "Health check $(date -u +%Y-%m-%dT%H:%MZ)"
               git reset -q --hard HEAD

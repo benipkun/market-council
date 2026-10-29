@@ -1574,6 +1574,13 @@ def main():
         print("actions:", "; ".join("%s %s" % (a["type"], a.get("ticker") or "") for a in acts["actions"]))
     except Exception as e:
         print("actions: the action list was not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # every logged trade checked against the books and classified, and the portfolio's exposure (the health job sends the phone message)
+    try:
+        import tradecheck
+        tc = tradecheck.run(now, phone=False)
+        print("trade check: %d trades, %d unclassified" % (len(tc["trades"]), len(tc["exposure"]["unknown"])))
+    except Exception as e:
+        print("trade check: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     # the order plans: every holding and idea with its levels, the Forecaster's chances, Revolut's wording and the morning watch
     try:
         import plans as order_plans

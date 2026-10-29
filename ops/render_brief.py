@@ -312,6 +312,18 @@ def main():
                 row.format(e(obj(a).get("n")), e(obj(a).get("type")), e(obj(a).get("line")), why(obj(a))) for a in arr(acts.get("swap_options")))
         sections.append(("actions", "What to do now", rows + '<p class="note">{}</p>'.format(e(acts.get("foot"))), ""))
 
+    # Your trades and exposure (ops/engine/tradecheck.py): the latest trade's checks and the portfolio by sector, region and risk
+    ex = obj(load("state/exposure.json"))
+    if obj(ex.get("exposure")):
+        x, body = obj(ex.get("exposure")), ""
+        for t in arr(ex.get("trades"))[:1]:
+            t = obj(t)
+            body += '<p><b>{} {} {}</b> &middot; {} &middot; idea from {}</p>'.format(e(str(t.get("action")).upper()), e(t.get("ticker")), usd(t.get("usd")), e(day(t.get("at"))), e(t.get("origin")))
+            body += "".join('<div class="kv"><span>{}</span><span class="r {}">{}</span></div>'.format(e(obj(c).get("text")), "wn" if obj(c).get("status") != "ok" else "up", e(str(obj(c).get("status")).upper())) for c in arr(t.get("checks")))
+        for title, key in (("By sector (cash included)", "by_sector"), ("By region", "by_region"), ("How jumpy", "by_risk")):
+            body += '<p class="note"><b>{}</b>: {}</p>'.format(title, e(", ".join("{} {:.0f}%".format(obj(r).get("name"), 100 * (num(obj(r).get("pct")) or 0)) for r in arr(x.get(key)))))
+        sections.append(("exposure", "Your trades and exposure", body, ""))
+
     # Decision desk: standing ideas from every source. A card stays until it is answered or expires,
     # so this section is not empty just because nothing new crossed a line this hour.
     if dec:
