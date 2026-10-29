@@ -5,7 +5,7 @@ name: Tests
 on:
   push:
     branches: [main]
-    paths: ["ops/**", "tests/**", ".github/workflows/tests.yml"]
+    paths: ["ops/**", "tests/**", "mc/**", "index.html", ".github/workflows/tests.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,6 +23,9 @@ jobs:
         run: pip install --quiet numpy scipy
       - name: Run the tests
         run: python tests/test_numbers.py
+      - name: Check every app script parses
+        # board cycle 1: a broken quote in mc/p11.js stopped TODAY's action list for half an hour
+        run: for f in mc/*.js; do node --check "$f" || exit 1; done; echo "app scripts: all parse"
       - name: Tell the phone if this job failed
         if: failure()
         env:

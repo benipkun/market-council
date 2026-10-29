@@ -171,7 +171,7 @@ def check_minutes(c):
     return probs
 
 
-def close(n, now=None):
+def close(n, now=None, phone=True):
     now = now or now_iso()
     c = rj("state/board/cycles/%d.json" % n)
     if not c:
@@ -206,8 +206,9 @@ def close(n, now=None):
     text = phone_text(row, prev, issues, cards)
     if flag:
         text = MONEY.sub("[amount]", text + " Warning: " + flag)
-    wj("outbox/queue/%s-board.json" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
-       {"title": "Market Council: board cycle %d" % n, "message": text, "click": "https://benipkun.github.io/market-council/#board", "tags": ["clipboard"]})
+    if phone:
+        wj("outbox/queue/%s-board.json" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+           {"title": "Market Council: board cycle %d" % n, "message": text, "click": "https://benipkun.github.io/market-council/#board", "tags": ["clipboard"]})
     return row, text
 
 
@@ -219,7 +220,7 @@ if __name__ == "__main__":
     elif cmd == "answers":
         print("cards: %d" % len(answers().get("cards") or []))
     elif cmd == "close" and len(sys.argv) > 2:
-        r, t = close(int(sys.argv[2]))
+        r, t = close(int(sys.argv[2]), phone="--quiet" not in sys.argv)   # --quiet: re-closing after re-judging
         print("cycle %d closed: average %.2f, %s" % (r["n"], r["avg"], "minutes OK" if not r["minutes_problems"] else "; ".join(r["minutes_problems"])))
     else:
         print(__doc__)
