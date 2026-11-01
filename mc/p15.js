@@ -76,6 +76,8 @@ document.addEventListener("click",function(e){var b=e.target.closest?e.target.cl
   put("answers/"+stamp()+"-board-"+id+".json","Market Council answer: board card "+id,JSON.stringify({kind:"board",id:id,answer:k,at:new Date().toISOString().replace(/[.][0-9]+Z$/,"Z")}))
   .then(function(err){note[id]=err||("Your "+k+" is recorded. The board acts on it at its next cycle.");render();});});
 MC.hooks.push(render);
+/* draw again whenever the app has loaded its extra files: before 1 Nov this page drew only once, before its data arrived */
+var prevRender=M.render;M.render=function(){var o=prevRender.apply(this,arguments);try{render();}catch(e){}return o;};
 setTimeout(render,0);
 M.reload();
 })();

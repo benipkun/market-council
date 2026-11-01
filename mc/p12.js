@@ -64,5 +64,7 @@ put("answers/"+stamp()+"-"+Math.random().toString(36).slice(2,7)+".json","Market
 if(k==="alert"){var t=b.getAttribute("data-t"),p=b.getAttribute("data-p");note["a:"+t]="Sending"+String.fromCharCode(8230);render();
 put("inbox/queue/"+stamp()+"Z-alert.md","Market Council: price alert","alert "+t+" above "+p+NL).then(function(err){note["a:"+t]=err||"Alert sent to the inbox: you get a phone message when "+t+" reaches $"+p+".";render();});}});
 MC.hooks.push(render);
+/* draw again whenever the app has loaded its extra files: before 1 Nov this page drew only once, before its data arrived */
+var prevRender=M.render;M.render=function(){var o=prevRender.apply(this,arguments);try{render();}catch(e){}return o;};
 M.reload();
 })();
