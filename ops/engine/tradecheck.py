@@ -11,6 +11,7 @@ A new trade sends one phone message, which names no share and no amount.
 import datetime
 import json
 import os
+import re
 import sys
 
 ROOT = os.environ.get("MC_ROOT", ".")
@@ -105,6 +106,9 @@ def origin(e, cards):
         c = sorted(hits, key=lambda c: str(c.get("created")))[-1]
         return {"kind": "suggested", "text": "suggested by Market Council (card %s, %s)" % (c.get("id"), str(c.get("created"))[:10]), "card": c.get("id")}
     why = str(e.get("why") or "")
+    # your own note says the app suggested it (1 Nov: "App's suggestion" on the CHWY sale was shown as your own idea)
+    if re.search(r"app|app.s|sugg|market council", why, re.I):
+        return {"kind": "suggested", "text": "suggested by Market Council (your note: %s)" % why[:80]}
     if "outside" in why.lower():
         return {"kind": "outside", "text": "an outside source (%s)" % why[:80]}
     return {"kind": "own", "text": "your own idea" + (" (%s)" % why[:80] if why else "")}

@@ -624,6 +624,7 @@ class TradeCheck(unittest.TestCase):
         self.assertEqual((c["books"], c["price"], c["size"], c["cash"], c["sector"], c["risk"]), ("ok", "warn", "warn", "warn", "warn", "warn"))
         self.assertEqual((t["AAA"]["status"], t["AAA"]["class"]["country"], t["AAA"]["origin"]), ("warn", "United States", "your own idea (my own)"))
         self.assertEqual(t["CCC"]["status"], "fail")                                # in the ledger, not in the holdings
+        self.assertEqual(TC.origin({"ticker": "X", "at": "2026-10-30T15:09:11Z", "action": "sell", "why": "App’s sudgestion"}, [])["kind"], "suggested")
         x = o["exposure"]
         self.assertAlmostEqual(sum(r["value"] for r in x["by_sector"]), 1000.0)     # every dollar is in one group, cash included
         self.assertEqual(x["unknown"], ["BBB"])
