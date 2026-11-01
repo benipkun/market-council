@@ -4,7 +4,9 @@
 name: Board screenshots
 on:
   schedule:
-    - cron: "20 5 * * 0"
+    # GitHub starts scheduled jobs late, sometimes by hours (1 Nov: 6.5 hours), so take them well before the board meets
+    - cron: "20 21 * * 6"
+    - cron: "20 1 * * 0"
   push:
     branches: [main]
     paths: ["ops/board_shots.js", ".github/workflows/board-shots.yml"]
