@@ -110,12 +110,17 @@ jobs:
             git reset -q --hard HEAD
             # If the records moved meanwhile, replay this commit on top of them; where both changed a results file, the fresh results win.
             pushed=0
-            for i in 1 2 3 4; do
+            # several jobs can save at the same moment (1 Nov: engine, back-checks and the review board), so wait longer each time
+            for i in 1 2 3 4 5 6; do
               if git fetch -q origin main && git rebase -q -X theirs origin/main && git push -q origin HEAD:main; then pushed=1; break; fi
               git rebase --abort 2>/dev/null || true
-              sleep 5
+              sleep $((i * 10))
             done
-            if [ "$pushed" != "1" ]; then say "The results could not be saved to the private records."; exit 1; fi
+            if [ "$pushed" != "1" ]; then
+              # the reason without file names: git's own text stays out of this public log
+              if grep -q "CONFLICT" /tmp/git.txt; then why="a conflict with newer records"; elif grep -qiE "denied|403|401|authentication|could not read" /tmp/git.txt; then why="access refused, check MC_TOKEN"; elif grep -qi "rejected" /tmp/git.txt; then why="other jobs kept saving first"; else why="reason not recognised"; fi
+              say "The results could not be saved to the private records ($why)."; exit 1
+            fi
             say "Results saved."
           fi
           if [ -s /tmp/failed ]; then say "Failed: $(tr '\n' ' ' < /tmp/failed)"; exit 1; fi
