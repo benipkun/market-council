@@ -358,7 +358,7 @@ def summarise(P, O, PL, labels=None):
 
 # ---------------------------------------------------------------- the back-test of the method itself
 def backtest(shares, ctx, tab, per, targets, rf, load, save):
-    key = "%s|v%d|%d|halves" % (ctx["cal"][-1][:7], VERSION, len(shares))
+    key = "%s|v%d|%d|halves2" % (ctx["cal"][-1][:7], VERSION, len(shares))
     old = load("fc_backtest.json")
     if old and old.get("key") == key:
         return old["out"]
@@ -401,7 +401,8 @@ def backtest(shares, ctx, tab, per, targets, rf, load, save):
         ix = [i for i, v in enumerate(sel) if v]
         if ix:
             h_ = summarise([P_[i] for i in ix], [O_[i] for i in ix], [PL_[i] for i in ix])
-            halves[name] = dict((k, h_.get(k)) for k in ("n", "brier", "brier_fifty", "brier_plain", "beats_fifty", "beats_plain"))
+            halves[name] = dict((k, h_.get(k)) for k in ("checked", "brier", "brier_fifty", "brier_plain", "beats_fifty", "beats_plain"))
+            halves[name]["n"] = h_.get("checked")   # the case count the card asked for (board cycle 2: it was saved empty)
     out["halves"] = halves
     out.update({"shares": used, "from": first, "to": last, "runs": BT_RUNS,
                 "method": "The same code made forecasts at one date every three months over the last twelve years for %d shares, using only prices up to that date and only past cases that had fully played out by then. Each forecast was then compared with what happened." % used,

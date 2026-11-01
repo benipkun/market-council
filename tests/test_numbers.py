@@ -645,6 +645,14 @@ class Board(unittest.TestCase):
         with open(os.path.join(self.d, rel), "w", encoding="utf-8") as f:
             json.dump(o, f)
 
+    def test_old_screenshots_are_flagged_stale(self):
+        self.write("state/board/shots/latest/report.json", {"at": "2026-10-29T01:41:53.825Z", "shots": []})
+        ev = BD.evidence(now="2026-11-01T05:41:29Z")
+        self.assertTrue(ev["screenshots"]["stale"])
+        self.assertEqual(ev["screenshots"]["age_h"], 76.0)
+        self.write("state/board/shots/latest/report.json", {"at": "2026-11-01T01:00:00Z", "shots": []})
+        self.assertFalse(BD.evidence(now="2026-11-01T05:41:29Z")["screenshots"]["stale"])
+
     def test_minutes_need_twelve_reviews_with_evidence_and_the_budget(self):
         m = self.minutes(1, 5)
         self.assertEqual(BD.check_minutes(m), [])

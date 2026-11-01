@@ -65,6 +65,19 @@ def ci_runs(n=30):
         return {"unreachable": type(e).__name__}
 
 
+def shots_age_h(shots, now):
+    # hours since the screenshots were taken; None when unknown. Old pictures must not be read as the current app.
+    try:
+        a = datetime.datetime.strptime(str((shots or {}).get("at"))[:19], "%Y-%m-%dT%H:%M:%S")
+        b = datetime.datetime.strptime(str(now)[:19], "%Y-%m-%dT%H:%M:%S")
+        return round((b - a).total_seconds() / 3600.0, 1)
+    except Exception:
+        return None
+
+
+SHOTS_STALE_H = 36
+
+
 def evidence(now=None):
     now = now or now_iso()
     st = rj("state/partners/statement.json", {}) or {}
@@ -92,7 +105,9 @@ def evidence(now=None):
         "costs": {"running": st.get("running_costs"), "questions": (rj("state/questions_eval.json", {}) or {}).get("cost")},
         "self_checks": {"action_list": ((rj("state/actions.json", {}) or {}).get("self_check") or {}).get("removed"),
                         "trades": [dict((k, t.get(k)) for k in ("at", "action", "ticker", "status")) for t in (rj("state/exposure.json", {}) or {}).get("trades") or []][:5]},
-        "screenshots": shots or {"missing": "no screenshots yet: the Board screenshots job has not run"},
+        "screenshots": (dict(shots, age_h=shots_age_h(shots, now), stale=(shots_age_h(shots, now) is None or shots_age_h(shots, now) > SHOTS_STALE_H),
+                             warning="Screenshots older than %d hours may not show the current app: say so before judging a screen." % SHOTS_STALE_H)
+                        if shots else {"missing": "no screenshots yet: the Board screenshots job has not run"}),
         "open_issues": issues,
         "honesty": "Only records are listed here. A reviewer who cites anything else must say so.",
     }
