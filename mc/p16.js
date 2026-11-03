@@ -31,7 +31,7 @@ function scen(q){
 }
 function pos(x){if(!x)return "";
   var h=head("YOUR POSITION THROUGH THE CALL")+p("You hold "+esc(String(x.shares))+" shares worth "+money(x.value)+".");
-  if(x.stop!=null)h+=p("Order-plan stop "+money(x.stop)+" ("+sp(x.stop_gap)+"): chance of a next-day close under it "+pc(x.p_below_stop,0)+". "+esc(x.stop_jump||""));
+  if(x.stop!=null)h+=p("Order-plan stop "+money(x.stop)+" ("+sp(x.stop_gap)+"): chance of a next-day close under it "+(x.p_below_stop_words||pc(x.p_below_stop,0))+". "+esc(x.stop_jump||""));
   h+='<div class="tw"><table><thead><tr><th>Before the call</th><th class="r">Middle case</th><th class="r">Worst 10%</th><th class="r">Best 10%</th><th class="r">Cost</th></tr></thead><tbody>'+
     (x.choices||[]).map(function(c){return '<tr><td>'+esc(c.choice)+'</td><td class="r mono">'+money(c.expected_next_day)+'</td><td class="r mono">'+money(c.worst_10)+'</td><td class="r mono">'+money(c.best_10)+'</td><td class="r mono">'+money(c.cost)+'</td></tr>';}).join("")+'</tbody></table></div>';
   if(x.note)h+=small(esc(x.note));
@@ -80,7 +80,7 @@ function render(){var el=$("v-earnings");if(!el)return;var h=html()||'<div class
 function paintToday(){var el=$("p16-host");if(!el)return;var e=M.X.earn,h="";
   if(e){var ps=e.predictions||{},soon=Object.keys(ps).filter(function(t){var c=ps[t].call||{},d=(new Date(c.date+"T12:00:00Z")-Date.now())/864e5;return d>-1&&d<=7;});
     if(soon.length)h=M.blk("EARNINGS SOON",'<span class="stg lvl">'+soon.length+'</span>',soon.map(function(t){var q=ps[t],o=q.overall||{},n=o.next_day||{};
-      return p("<b>"+esc(t)+"</b> "+when(q.call)+": beat EPS "+pc((q.eps||{}).p_beat,0)+DOT+"up next day "+pc(o.p_up_next_day,0)+DOT+"range "+sp(n.p10)+" to "+sp(n.p90)+(q.implied_move!=null?DOT+"options "+String.fromCharCode(177)+pc(q.implied_move):"")+(q.position&&q.position.p_below_stop!=null?DOT+"chance under your stop "+pc(q.position.p_below_stop,0):"")+few(q.few));}).join("")+
+      return p("<b>"+esc(t)+"</b> "+when(q.call)+": beat EPS "+pc((q.eps||{}).p_beat,0)+DOT+"up next day "+pc(o.p_up_next_day,0)+DOT+"range "+sp(n.p10)+" to "+sp(n.p90)+(q.implied_move!=null?DOT+"options "+String.fromCharCode(177)+pc(q.implied_move):"")+(q.position&&q.position.p_below_stop!=null?DOT+"chance under your stop "+(q.position.p_below_stop_words||pc(q.position.p_below_stop,0)):"")+few(q.few));}).join("")+
       '<div class="gap"><a class="btn sm" href="#earnings">Open EARNINGS</a></div>',"Estimates, never promises.");}
   if(el.__h!==h){el.innerHTML=h;el.__h=h;}}
 document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-p16]"):null;if(!b)return;var t=b.getAttribute("data-p16");open[t]=!open[t];render();});

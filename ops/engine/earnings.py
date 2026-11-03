@@ -245,7 +245,7 @@ def predict(t, call, own, pool, implied=None, consensus=None):
     rv = [r for r in (consensus or {}).get("_rows") or [] if r.get("rev") and r.get("rev_est")]
     rb = sum(1 for r in rv if r["rev"] > r["rev_est"] * (1 + 0.005))
     p_rev = (rb + 4 * 0.5) / (len(rv) + 4) if rv else None
-    return {"ticker": t, "call": call, "own_cases": n, "pool_cases": len(pool), "few": n < FEW,
+    return {"_mix1": mix1, "ticker": t, "call": call, "own_cases": n, "pool_cases": len(pool), "few": n < FEW,
             "eps": {"consensus": cons, "consensus_source": (consensus or {}).get("eps_source") or "Nasdaq calendar", "analysts": call.get("estimates"),
                     "ours": r4(ours, 3), "ours_method": "consensus moved by the company's median surprise over its last %d calls (%s)" % (
                         len(last8), "%+.1f%%" % (100 * med) if med is not None else "none"),
@@ -344,16 +344,12 @@ def position(t, pred, snap, plans, keeps):
     out = {"value": r4(mv, 2), "shares": r4(qty, 6), "price": r4(px, 2), "kept": t in (keeps or {})}
     if stop and px:
         gap = stop / px - 1
-        rows = [s for s in pred["scenarios"]]
-        # chance of a next-day close under the stop, from the scenario ranges (linear between the percentiles)
-        pb = 0.0
-        for s in rows:
-            nd = s["next_day"]
-            pts = [(0.1, nd["p10"]), (0.25, nd["p25"]), (0.5, nd["median"]), (0.75, nd["p75"]), (0.9, nd["p90"])]
-            pts = [(q, v) for q, v in pts if v is not None]
-            pb += (s["chance"] or 0) * cdf(pts, gap)
+        # chance of a next-day close under the stop: the weighted share of past reactions (own and pooled) that fell that far
+        mix = pred.get("_mix1") or []
+        tw = sum(w for v, w in mix) or 1.0
+        pb = sum(w for v, w in mix if v is not None and v <= gap) / tw
         worst = o["p10"]
-        out.update({"stop": stop, "stop_gap": r4(gap), "p_below_stop": r4(pb, 3),
+        out.update({"stop": stop, "stop_gap": r4(gap), "p_below_stop": r4(pb, 3), "p_below_stop_words": ("under 1%" if pb < 0.01 else None),
                     "stop_jump": ("In the worst 10%% of cases the share opens at about $%.2f (%+.1f%%), $%.2f under the stop: a stop order would fill there, about $%.2f more loss than at the stop."
                                   % (px * (1 + worst), 100 * worst, stop - px * (1 + worst), qty * (stop - px * (1 + worst)))) if worst is not None and px * (1 + worst) < stop else
                                  "Even the worst 10% of past reactions stays above the stop."})
@@ -465,7 +461,9 @@ def summary(rows, label):
     if not n:
         out["verdict"] = "No call scored yet."
         return out
-    mean = lambda k: r4(sum(r[k] for r in finals if r.get(k) is not None) / max(1, sum(1 for r in finals if r.get(k) is not None)))
+    def mean(k):
+        v = [r[k] for r in finals if r.get(k) is not None]
+        return r4(sum(v) / len(v)) if v else None
     out.update({"right_direction": r4(sum(1 for r in finals if r["right_direction"]) / n, 3), "brier_up": mean("brier_up"), "brier_coin": 0.25,
                 "in_range_10_90": r4(sum(1 for r in finals if r["in_range"]) / n, 3),
                 "move_error_ours": mean("err_ours"), "move_error_implied": mean("err_implied"), "move_error_own_avg": mean("err_own_avg"),
@@ -474,9 +472,10 @@ def summary(rows, label):
         out["verdict"] = "Too early to judge: %d of the %d calls needed have been scored." % (n, JUDGE)
     else:
         beats = [k for k in ("move_error_implied", "move_error_own_avg") if out.get(k) is not None and out["move_error_ours"] < out[k]]
+        coin = " Direction: %.3f error score against 0.250 for a coin flip%s." % (out["brier_up"], "" if out["brier_up"] < 0.25 else ", so no better than a coin")
         out["verdict"] = "Our size-of-move error is %.2f points against %s; direction right %.0f%% of the time." % (
             100 * out["move_error_ours"], ", ".join("%s %.2f" % (k.replace("move_error_", ""), 100 * out[k]) for k in ("move_error_implied", "move_error_own_avg") if out.get(k) is not None),
-            100 * out["right_direction"]) + (" It beats %s." % " and ".join(b.replace("move_error_", "") for b in beats) if beats else " It beats neither rival.")
+            100 * out["right_direction"]) + (" It beats %s." % " and ".join(b.replace("move_error_", "") for b in beats) if beats else " It beats neither rival.") + coin
     return out
 
 
@@ -504,6 +503,7 @@ def backtest(all_cases, min_prior=8):
                 continue
             pool = [x for x in all_cases if x["t"] != t and x["date"] < c["date"]]
             p = predict(t, {"date": c["date"]}, prior, pool)
+            p.pop("_mix1", None)
             e = {"id": "bt|%s|%s" % (t, c["date"]), "t": t, "call_date": c["date"], "stage": "final", "p_up_1d": p["overall"]["p_up_next_day"],
                  "q10": p["overall"]["next_day"]["p10"], "q90": p["overall"]["next_day"]["p90"], "exp_abs": p["overall"]["expected_abs_move"],
                  "own_avg_abs": p["past_reactions"]["mean_abs_next_day"], "implied": None, "p_beat": p["eps"]["p_beat"]}
@@ -596,6 +596,7 @@ def run(now=None, closes=None, net=True):
                             "own_avg_abs": p["past_reactions"]["mean_abs_next_day"], "p_bigger_than_implied": p["overall"]["p_bigger_than_implied"],
                             "own_cases": p["own_cases"], "pool_cases": p["pool_cases"]})
                 logged.add(pid)
+        p.pop("_mix1", None)
         preds[t] = p
     # after the call: the actual result, the read, the drift
     after = {}
