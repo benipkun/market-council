@@ -571,8 +571,8 @@ def run(now=None, closes=None, net=True):
         agree = second.get(t)
         c = dict(c, ticker=t, second_source=agree, sources_agree=(agree == c["date"]) if agree else None)
         rows_cal.append(c)
-        if day(c["date"]) < today:
-            continue
+        if day(c["date"]) < today or (day(c["date"]) == today and c.get("time") == "bmo"):
+            continue                                                     # already reported: it belongs after the call
         own = [x for x in allc if x["t"] == t]
         pool = [x for x in allc if x["t"] != t]
         imp, exp = implied_move(t, c["date"]) if net else (None, None)
@@ -616,10 +616,21 @@ def run(now=None, closes=None, net=True):
                     "next_day": r4((o or {}).get("r1")), "five_days": r4((o or {}).get("r5")),
                     "drift": drift(scenario(s), o["r1"], own, pool) if o and s is not None else {"note": "waiting for the first trading day after the call"},
                     "read": rd or {"note": "the Earnings Reader has not read this call's transcript yet"}}
+    # one phone message when, after a call, the action list says something different about that share
+    acts = (rj("state/actions.json", {}) or {}).get("actions") or []
+    def lines_for(t):
+        return [a.get("line") for a in acts if t in (a.get("ticker"), (a.get("sell") or {}).get("ticker"), (a.get("buy") or {}).get("ticker"))]
+    seen = prev.get("action_lines") or {}
+    now_lines = dict((t, lines_for(t)) for t in after)
+    for t, ls in now_lines.items():
+        if t in seen and seen[t] != ls and (t in held or ls):
+            msg = "After %s's results the action list changed: %s" % (t, "; ".join(ls) if ls else "it no longer lists %s" % t)
+            wj("outbox/queue/%s-earnings-%s.json" % (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"), t),
+               {"title": "Market Council: %s after its results" % t, "message": msg[:900], "click": "https://benipkun.github.io/market-council/#today", "tags": ["chart_with_upwards_trend"]})
     live = score(read_log(), outcomes)
     bt, _ = backtest(allc)
     out = {"as_of": now, "calendar": sorted(rows_cal, key=lambda r: (r["date"], r["ticker"])), "calendar_failed_days": failed,
-           "predictions": preds, "after": after, "score": summary(live, "live predictions"), "scored": live[-30:], "backtest": bt,
+           "predictions": preds, "after": after, "action_lines": now_lines, "score": summary(live, "live predictions"), "scored": live[-30:], "backtest": bt,
            "sources": {"dates": "Nasdaq earnings calendar; checked against the pipeline's Twelve Data date", "history": "Alpha Vantage seed, kept current from Nasdaq",
                        "implied": "Cboe delayed option chain, at-the-money straddle", "prices": "the engine's daily closes", "reads": "Earnings Reader routine (agent)"},
            "honesty": HONEST + " Fewer than %d cases: too few cases to rely on. The record is judged after %d scored calls." % (FEW, JUDGE)}
