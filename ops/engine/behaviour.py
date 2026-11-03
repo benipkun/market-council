@@ -155,22 +155,22 @@ def describe(events, overs):
             b = [e for e in events if not COND["run_up"](e) and e["scen"] == "beat"]
             row.update(cases=len(c), how_often=r4(sum(1 for e in c if e["r1"] < 0) / len(c), 3) if c else None,
                        base_rate=r4(sum(1 for e in b if e["r1"] < 0) / len(b), 3) if b else None, base_cases=len(b),
-                       typical_move=r4(sum(e["r1"] for e in c) / len(c)) if c else None, few=len(c) < FEW,
-                       words="beats after a big run-up fell the next day in %s of %d cases, against %s of %d beats without one" % (
+                       typical_move=r4(sum(e["r1"] for e in c) / len(c)) if c else None, few=len(c) < FEW)
+            row.update(words="beats after a big run-up fell the next day in %s of %d cases, against %s of %d beats without one" % (
                            pc(row.get("how_often") if c else None), len(c), pc(sum(1 for e in b if e["r1"] < 0) / len(b) if b else None), len(b)))
         elif r["id"] == "underreaction":
             c = [e for e in events if abs(e["surprise"]) > ER.BAND and "d5" in e]
             same = [e for e in c if (e["d5"] > 0) == (e["r1"] > 0)]
             row.update(cases=len(c), how_often=r4(len(same) / len(c), 3) if c else None, base_rate=0.5,
-                       typical_move=r4(sum(e["d5"] * (1 if e["r1"] > 0 else -1) for e in c) / len(c)) if c else None, few=len(c) < FEW,
-                       words="the five days after the first day went the same way in %s of %d cases (a coin is 50%%)" % (pc(row.get("how_often") if c else None), len(c)))
+                       typical_move=r4(sum(e["d5"] * (1 if e["r1"] > 0 else -1) for e in c) / len(c)) if c else None, few=len(c) < FEW)
+            row.update(words="the five days after the first day went the same way in %s of %d cases (a coin is 50%%)" % (pc(row.get("how_often") if c else None), len(c)))
         elif r["id"] == "overreaction":
             drops = [o for o in overs if o["kind"] == "drop"]
             bounce = [o for o in drops if o["next5"] > 0]
             after = [o["next5"] - COST for o in drops]
             row.update(cases=len(drops), how_often=r4(len(bounce) / len(drops), 3) if drops else None, base_rate=None,
-                       typical_move=r4(sum(after) / len(after)) if after else None, few=len(drops) < FEW,
-                       words="after an extreme one-day fall the next five days were up in %s of %d cases; average %s after costs" % (
+                       typical_move=r4(sum(after) / len(after)) if after else None, few=len(drops) < FEW)
+            row.update(words="after an extreme one-day fall the next five days were up in %s of %d cases; average %s after costs" % (
                            pc(row.get("how_often") if drops else None), len(drops), sp(row.get("typical_move") if after else None)))
         elif r["id"] == "fear_discount":
             out = {}
@@ -351,8 +351,8 @@ def readings(t, closes, events, hist, opt, short, mood, smart, attention, event=
         past = [e["runup10"] for e in events if e["t"] == t]
         lo, hi = quant(past, 0.1), quant(past, 0.9)
         add("Run-up (last 10 trading days)", r4(run), [r4(lo), r4(hi)] if past else None, "%d past calls of this share" % len(past),
-            ("Up %s in ten days, %s for this share before its past calls: %s." % (sp(run), "high" if hi is not None and run > hi else "low" if lo is not None and run < lo else "normal",
-             "much may already be priced in" if z is not None and z >= RUNUP_Z else "not stretched")) if past else "Up %s in ten days; no past calls to compare." % sp(run))
+            ("Moved %s in ten days, %s this share's range before its past calls (%s to %s)%s." % (sp(run), "above" if hi is not None and run > hi else "below" if lo is not None and run < lo else "within",
+             sp(lo), sp(hi), "; against its usual daily moves that is a large run-up (%.1f times a normal 10-day move), so some good news may be priced in" % z if z is not None and z >= RUNUP_Z else "")) if past else "Moved %s in ten days; no past calls to compare." % sp(run))
         hi52, lo52 = max(cs[-252:]), min(cs[-252:])
         add("Distance from the 52-week high", r4(cs[-1] / hi52 - 1), None, "one year of closes", "%s below its 52-week high ($%.2f), %s above its low ($%.2f)." % (pc(1 - cs[-1] / hi52, 1), hi52, pc(cs[-1] / lo52 - 1, 1), lo52))
         step = 1 if cs[-1] < 20 else (5 if cs[-1] < 150 else 10)
@@ -514,7 +514,7 @@ def run(now=None, closes=None, net=True):
         words = {"run_up": "the share already ran up into the call", "stressed": "the market is stressed"}
         fired = [k for k in COND if COND[k](f)]
         line = ("Base forecast %s up; behaviour adjustment %+.0f points (%s); final %s." % (pc(bu), 100 * d, ", ".join(words[k] for k in why), pc(up)) if why else
-                "Base forecast %s up; no behaviour adjustment (%s); final %s." % (pc(bu), ("%s present but not proven to help out of sample" % " and ".join(words[k] for k in fired)) if fired else "no tested pattern fires", pc(up)))
+                "Base forecast %s up; no behaviour adjustment (%s); final %s." % (pc(bu), ("%s, but that pattern did not improve forecasts out of sample" % " and ".join(words[k] for k in fired)) if fired else "no tested pattern fires", pc(up)))
         top = [x for x in rd if x["available"]][:3]
         card = {"ticker": t, "call": q["call"], "base_p_up": bu, "adjustment": r4(d, 4), "final_p_up": r4(up, 3), "base_abs": ba, "final_abs": r4(ab),
                 "final_next_day": adjq, "line": line, "why": why, "fired_untested": [k for k in fired if k not in keep], "top_readings": [x["sentence"] for x in top]}
