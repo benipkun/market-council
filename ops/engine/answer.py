@@ -130,6 +130,7 @@ def gather(q, conv=None, fresh=True):
          "portfolio_forecast": dict((h, dict((k, r(v.get("p"), 3)) for k, v in (((fc.get("portfolio") or {}).get("h") or {}).get(h) or {}).get("f", {}).items())) for h in ("1m", "1y")),
          "monthly_contribution": (acts.get("inputs") or {}).get("monthly_huf"), "usd_huf": (acts.get("inputs") or {}).get("usd_huf"),
          "partners_bottom_line": st.get("bottom_line"),
+         "earnings": earnings_facts(ts + [c.get("ticker") for c in ((rj("state/earnings.json", {}) or {}).get("calendar") or [])[:3]]),
          "conversation": conv if conv is not None else history(),
          "missing": [x for x in ["news: the hourly news reader has been offline since " + str((rj("digests/latest.json", {}) or {}).get("as_of"))[:10]
                                  if (rj("digests/latest.json", {}) or {}).get("as_of", "") < (datetime.date.today() - datetime.timedelta(days=2)).isoformat() else None] if x]}
@@ -206,9 +207,42 @@ def render(ans):
     return "\n".join(out)
 
 
+def earnings_facts(ts):
+    # the earnings predictions (ops/engine/earnings.py) for the shares in the question, the holdings and the next reporters
+    e = rj("state/earnings.json", {}) or {}
+    out = {}
+    for t in dict.fromkeys(x for x in ts if x):
+        q = (e.get("predictions") or {}).get(t)
+        if q:
+            o, ep = q.get("overall") or {}, q.get("eps") or {}
+            out[t] = {"date": q["call"].get("date"), "time": q["call"].get("time"), "eps_consensus": ep.get("consensus"), "eps_ours": ep.get("ours"),
+                      "p_beat": ep.get("p_beat"), "p_miss": ep.get("p_miss"), "p_up_next_day": o.get("p_up_next_day"), "next_day_range_10_90": [(o.get("next_day") or {}).get("p10"), (o.get("next_day") or {}).get("p90")],
+                      "implied_move": q.get("implied_move"), "p_bigger_than_implied": o.get("p_bigger_than_implied"), "own_cases": q.get("own_cases"), "honesty": q.get("honesty"),
+                      "position": dict((k, (q.get("position") or {}).get(k)) for k in ("value", "stop", "p_below_stop", "stop_jump", "kept")) if q.get("position") else None}
+        a = (e.get("after") or {}).get(t)
+        if a:
+            out.setdefault(t, {})["after"] = dict((k, a.get(k)) for k in ("call_date", "eps", "consensus", "surprise", "scenario", "next_day", "five_days", "drift"))
+    return out
+
+
 def topic_answer(q, facts):
     # questions that are not about what to buy or sell, answered from the computed figures
     s = q.lower()
+    ef = facts.get("earnings") or {}
+    et = next((w.upper() for w in re.findall(r"[A-Za-z]{2,6}", q) if w.upper() in ef and ef[w.upper()].get("p_up_next_day") is not None), None)
+    if et and any(w in s for w in ("earning", "report", "results", "call", "quarter")):
+        x = ef[et]
+        rg = x.get("next_day_range_10_90") or [None, None]
+        fmt = lambda v: "%+.1f%%" % (100 * v) if v is not None else "n/a"
+        ans = "%s reports %s %s: %d%% chance it beats the EPS consensus of $%s, %d%% that the share is up the next day, likely range %s to %s%s." % (
+            et, x["date"], "before the open" if x.get("time") == "bmo" else "after the close" if x.get("time") == "amc" else "",
+            round(100 * (x.get("p_beat") or 0)), x.get("eps_consensus"), round(100 * x["p_up_next_day"]), fmt(rg[0]), fmt(rg[1]),
+            ("; the options market expects about %.1f%% either way" % (100 * x["implied_move"])) if x.get("implied_move") else "")
+        why = ["Counted from %s of its own past calls and the other shares' calls; %s" % (x.get("own_cases"), x.get("honesty") or "")]
+        if x.get("position") and x["position"].get("stop") is not None:
+            why.append("Your position: %d%% chance of a next-day close under your stop ($%s). %s" % (round(100 * (x["position"].get("p_below_stop") or 0)), x["position"]["stop"], x["position"].get("stop_jump") or ""))
+        return {"answer": ans, "why": why, "would_change": "The actual result against consensus and what management says about guidance.",
+                "evidence": "Estimates from past cases, never promises; the record is scored after every call on the EARNINGS screen."}
     pf = (facts.get("portfolio_forecast") or {}).get("1y") or {}
     if ("chance" in s or "probab" in s or "likely" in s) and "portfolio" in s and pf.get("port_loss") is not None:
         p = pf["port_loss"]
