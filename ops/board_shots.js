@@ -32,7 +32,7 @@ const TABS = ["today", "brief", "portfolio", "map", "risk", "plans", "log", "res
       const h = await page.evaluate(() => document.documentElement.scrollHeight);
       // a screen still showing its loading text after ten seconds never got its data (PLANS and BOARD, 1 Nov)
       const stuck = await page.evaluate(() => { const v = document.querySelector("section.view:not([hidden])"); return !!v && /Loading the|has not met yet|appear after the next engine run/.test(v.innerText); });
-      await page.screenshot({ path: path.join(out, tab + ".png"), fullPage: true, clip: { x: 0, y: 0, width: 390, height: Math.min(h, 5000) } });
+      await page.screenshot({ path: path.join(out, tab + ".png"), fullPage: true, clip: { x: 0, y: 0, width: 390, height: Math.min(h, 6000) } });
       report.push({ tab, ok: !stuck, stuck, ms: Date.now() - t0, height: h, settled: idle });
       if (!stuck) n++;
     } catch (e) {
