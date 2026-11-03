@@ -25,6 +25,7 @@ import keeper as K  # noqa: E402
 import answer as ANS  # noqa: E402
 import tradecheck as TC  # noqa: E402
 import board as BD  # noqa: E402
+import earnings as ER  # noqa: E402
 import json  # noqa: E402
 import tempfile  # noqa: E402
 import quant as Q  # noqa: E402
@@ -677,6 +678,52 @@ class Board(unittest.TestCase):
         self.assertIn("ideas_vs_index", r2["board_wrong"])
         self.assertIn("average 6.0/10 (+2.0)", t2)
         self.assertEqual([c["n"] for c in json.load(open(os.path.join(self.d, "state/board/scoreboard.json")))["cycles"]], [1, 2])
+
+
+class Earnings(unittest.TestCase):
+    def closes(self):
+        # 60 weekdays from 2026-01-05 at 100; the news days move the price
+        d, out, px = datetime.date(2026, 1, 5), [], 100.0
+        while len(out) < 60:
+            if d.weekday() < 5:
+                px = {"2026-01-14": 110.0, "2026-02-05": 95.0}.get(str(d), px)
+                out.append((str(d), px))
+            d += datetime.timedelta(days=1)
+        return out
+
+    def test_the_reaction_day_follows_the_time_of_the_call(self):
+        c = self.closes()
+        self.assertAlmostEqual(ER.reaction(c, "2026-01-14", "bmo")["r1"], 0.10)      # before the open: that day's close against the day before
+        self.assertAlmostEqual(ER.reaction(c, "2026-01-13", "amc")["r1"], 0.10)      # after the close: the next day's close
+        self.assertEqual(ER.reaction(c, "2026-01-14", "amc")["r1"], 0.0)
+
+    def test_chances_count_own_calls_shrunk_to_the_pool(self):
+        own = [{"t": "A", "date": "2025-%02d-01" % m, "scen": "beat", "r1": 0.05, "r5": 0.06, "surprise": 0.1} for m in range(1, 13)]
+        pool = [{"t": "B", "date": "2025-%02d-02" % m, "scen": s, "r1": r, "r5": r, "surprise": 0.0} for m in range(1, 13) for s, r in (("miss", -0.04), ("inline", 0.01))]
+        p = ER.predict("A", {"date": "2026-02-01", "eps_consensus": 1.0}, own, pool, implied=0.06)
+        e = p["eps"]
+        self.assertAlmostEqual(e["p_beat"] + e["p_inline"] + e["p_miss"], 1.0, places=2)
+        self.assertAlmostEqual(e["p_beat"], 12 / 20.0, places=3)                     # 12 own beats, the pool has none, it counts as 8 calls
+        self.assertTrue(p["few"])                                                    # 12 own calls: too few to rely on
+        self.assertAlmostEqual(e["ours"], 1.1, places=3)                             # consensus moved by the median surprise (+10%)
+
+    def test_the_last_day_before_the_news_is_the_final_prediction(self):
+        self.assertEqual(ER.stage_for({"date": "2026-11-04", "time": "bmo"}, datetime.date(2026, 11, 3)), "final")
+        self.assertEqual(ER.stage_for({"date": "2026-11-03", "time": "amc"}, datetime.date(2026, 11, 3)), "final")
+        self.assertEqual(ER.stage_for({"date": "2026-11-05", "time": "bmo"}, datetime.date(2026, 11, 3)), "early")
+        self.assertIsNone(ER.stage_for({"date": "2026-11-03", "time": "bmo"}, datetime.date(2026, 11, 3)))   # already out
+
+    def test_a_prediction_is_scored_against_both_rivals_and_the_back_test_looks_back_only(self):
+        e = {"id": "A|2026-01-14|final", "t": "A", "call_date": "2026-01-14", "stage": "final", "p_up_1d": 0.6, "q10": -0.05, "q90": 0.08,
+             "exp_abs": 0.06, "implied": 0.04, "own_avg_abs": 0.03, "p_beat": 0.7}
+        r = ER.score([e], {"A|2026-01-14": {"r1": 0.10, "scen": "beat"}})[0]
+        self.assertTrue(r["right_direction"])
+        self.assertFalse(r["in_range"])
+        self.assertEqual((r["err_ours"], r["err_implied"], r["err_own_avg"]), (0.04, 0.06, 0.07))
+        cs = [{"t": "A", "date": "2024-%02d-01" % m, "scen": "beat", "r1": 0.02 * (1 if m % 2 else -1), "r5": 0.0, "surprise": 0.1} for m in range(1, 13)]
+        s, rows = ER.backtest(cs, min_prior=8)
+        self.assertEqual(len(rows), 4)                                               # calls 9 to 12, each from the calls before it only
+        self.assertIn("Too early to judge", s["verdict"])
 
 
 class Answers(unittest.TestCase):
