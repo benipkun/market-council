@@ -40,7 +40,7 @@ function pred(t,q){
   var c=q.call||{},e=q.eps||{},r=q.revenue||{},g=q.guidance||{},d=q.drivers||{},pr=q.past_reactions||{},o=q.overall||{},n=o.next_day||{},b=open[t];
   var h=p("<b>"+esc(t)+"</b> reports "+when(c)+". EPS consensus "+(e.consensus!=null?"$"+e.consensus:DASH)+(e.analysts?" ("+e.analysts+" analysts)":"")+"; our estimate "+(e.ours!=null?"$"+e.ours:DASH)+". "+
     "Chance to beat "+pc(e.p_beat,0)+", in line "+pc(e.p_inline,0)+", miss "+pc(e.p_miss,0)+". Up the next day: "+pc(o.p_up_next_day,0)+", likely range "+sp(n.p10)+" to "+sp(n.p90)+
-    (q.implied_move!=null?"; the options market expects "+String.fromCharCode(177)+pc(q.implied_move)+", chance of a bigger move "+pc(o.p_bigger_than_implied,0):"")+"."+few(q.few));
+    (q.implied_move!=null?"; the options market expects "+String.fromCharCode(177)+pc(q.implied_move)+" (options to "+esc(q.implied_expiry||DASH)+"), chance of a bigger move "+pc(o.p_bigger_than_implied,0):"")+"."+few(q.few));
   h+='<div class="gap"><button class="btn sm" data-p16="'+esc(t)+'">'+(b?"Less":"The full prediction")+'</button></div>';
   if(b){
     h+=head("WHAT WILL THEY REPORT?")+p("Our EPS estimate: "+esc(e.ours_method||""))+
