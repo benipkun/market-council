@@ -629,9 +629,16 @@ def run(now=None, closes=None, net=True):
 def due(now=None):
     # what the Earnings Reader has to read: the previous call of shares reporting within 10 days (drivers), and calls just reported
     today = day(now or datetime.datetime.now(datetime.timezone.utc).isoformat())
+    # only shares you hold or that today's action list would buy: reading transcripts is the one step that costs agent time
     e = rj("state/earnings.json", {}) or {}
-    pre = [r["ticker"] for r in e.get("calendar") or [] if 0 <= (day(r["date"]) - today).days <= 10 and not drivers(r["ticker"]).get("items")]
-    post = [t for t, a in (e.get("after") or {}).items() if (today - day(a["call_date"])).days <= 3 and not any(r.get("call_date") == a["call_date"] for r in read_files(t))]
+    held = set(p.get("ticker") for p in (rj("treasury/snapshot.json", {}) or {}).get("positions") or [])
+    buys = set(a.get("ticker") or (a.get("buy") or {}).get("ticker") for a in (rj("state/actions.json", {}) or {}).get("actions") or [] if a.get("type") in ("BUY", "SWAP"))
+    mine = held | buys
+    hist = lambda t: (rj("state/earnings/history/%s.json" % t, {}) or {}).get("rows") or []
+    pre = [{"ticker": r["ticker"], "call": r["date"], "read_previous_call": (hist(r["ticker"]) or [{}])[-1].get("date")}
+           for r in e.get("calendar") or [] if r["ticker"] in mine and 0 <= (day(r["date"]) - today).days <= 10 and not drivers(r["ticker"]).get("items")]
+    post = [{"ticker": t, "call": a["call_date"]} for t, a in (e.get("after") or {}).items()
+            if t in mine and (today - day(a["call_date"])).days <= 3 and not any(r.get("call_date") == a["call_date"] for r in read_files(t))]
     return {"pre": pre, "post": post}
 
 
