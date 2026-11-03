@@ -130,6 +130,7 @@ def gather(q, conv=None, fresh=True):
          "portfolio_forecast": dict((h, dict((k, r(v.get("p"), 3)) for k, v in (((fc.get("portfolio") or {}).get("h") or {}).get(h) or {}).get("f", {}).items())) for h in ("1m", "1y")),
          "monthly_contribution": (acts.get("inputs") or {}).get("monthly_huf"), "usd_huf": (acts.get("inputs") or {}).get("usd_huf"),
          "partners_bottom_line": st.get("bottom_line"),
+         "behaviour": behaviour_facts(ts),
          "earnings": earnings_facts(ts + [c.get("ticker") for c in ((rj("state/earnings.json", {}) or {}).get("calendar") or [])[:3]]),
          "conversation": conv if conv is not None else history(),
          "missing": [x for x in ["news: the hourly news reader has been offline since " + str((rj("digests/latest.json", {}) or {}).get("as_of"))[:10]
@@ -225,9 +226,34 @@ def earnings_facts(ts):
     return out
 
 
+def behaviour_facts(ts):
+    b = rj("state/behaviour.json", {}) or {}
+    out = {"mood": b.get("mood"), "kept_patterns": (b.get("backtest") or {}).get("kept")}
+    for t in dict.fromkeys(x for x in ts if x):
+        rd = [x for x in (b.get("readings") or {}).get(t) or [] if x.get("available")]
+        c = (b.get("cards") or {}).get(t)
+        if rd or c:
+            out[t] = {"readings": [dict((k, x.get(k)) for k in ("name", "value", "normal", "sentence")) for x in rd], "event": dict((k, c.get(k)) for k in ("line", "base_p_up", "adjustment", "final_p_up")) if c else None}
+    return out
+
+
 def topic_answer(q, facts):
     # questions that are not about what to buy or sell, answered from the computed figures
     s = q.lower()
+    bf = facts.get("behaviour") or {}
+    bt = next((w.upper() for w in re.findall(r"[A-Za-z]{2,6}", q) if w.upper() in bf and isinstance(bf[w.upper()], dict) and bf[w.upper()].get("readings")), None)
+    if bt and any(w in s for w in ("priced in", "too bullish", "too bearish", "crowded", "everyone", "sentiment", "hype")):
+        x = bf[bt]
+        rd = dict((r["name"], r) for r in x["readings"])
+        run = rd.get("Run-up (last 10 trading days)")
+        lead = run["sentence"] if run else "No run-up reading for %s." % bt
+        why = [r["sentence"] for n, r in rd.items() if n.startswith(("Put/call", "Puts against", "Options price", "Attention", "Short interest"))][:3]
+        if x.get("event"):
+            why.append(x["event"]["line"])
+        kept = bf.get("kept_patterns") or []
+        return {"answer": lead, "why": why or ["Few crowd readings are available for this share yet."],
+                "would_change": "A run-up well beyond its normal pre-event move, or put prices far outside their normal range once 20 days are recorded.",
+                "evidence": ("Behaviour patterns that earned their place in the walk-forward test: %s." % ", ".join(kept)) if kept else "No behaviour pattern has yet improved forecasts out of sample, so these readings inform but do not change the numbers."}
     ef = facts.get("earnings") or {}
     et = next((w.upper() for w in re.findall(r"[A-Za-z]{2,6}", q) if w.upper() in ef and ef[w.upper()].get("p_up_next_day") is not None), None)
     if et and any(w in s for w in ("earning", "report", "results", "call", "quarter")):

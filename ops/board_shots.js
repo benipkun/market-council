@@ -8,7 +8,7 @@ const path = require("path");
 
 const URL = "https://benipkun.github.io/market-council/";
 const TABS = ["today", "brief", "portfolio", "map", "risk", "plans", "log", "research", "watch", "quant", "council",
-  "strategy", "checks", "forecasts", "record", "partners", "system", "review", "guide", "board", "earnings"];
+  "strategy", "checks", "forecasts", "record", "partners", "system", "review", "guide", "board", "earnings", "behaviour"];
 
 (async () => {
   const out = process.argv[2] || "/tmp/shots";

@@ -26,6 +26,7 @@ import answer as ANS  # noqa: E402
 import tradecheck as TC  # noqa: E402
 import board as BD  # noqa: E402
 import earnings as ER  # noqa: E402
+import behaviour as BH  # noqa: E402
 import json  # noqa: E402
 import tempfile  # noqa: E402
 import quant as Q  # noqa: E402
@@ -724,6 +725,37 @@ class Earnings(unittest.TestCase):
         s, rows = ER.backtest(cs, min_prior=8)
         self.assertEqual(len(rows), 4)                                               # calls 9 to 12, each from the calls before it only
         self.assertIn("Too early to judge", s["verdict"])
+
+
+class Behaviour(unittest.TestCase):
+    def test_a_stressed_market_is_read_from_the_vix_or_the_fall_from_the_high(self):
+        spy = [("2026-01-%02d" % d, 100.0) for d in range(1, 20)] + [("2026-01-20", 89.0)]
+        self.assertTrue(BH.stressed_at("2026-01-21", spy, [])[0])                  # 11% under its high
+        self.assertFalse(BH.stressed_at("2026-01-21", spy[:-1], [("2026-01-19", 18.0)])[0])
+        self.assertTrue(BH.stressed_at("2026-01-21", spy[:-1], [("2026-01-19", 31.0)])[0])
+
+    def test_an_effect_is_shrunk_by_its_case_count(self):
+        ev = [{"r1": 0.02, "runup_z": 0.0, "stressed": False} for _ in range(30)] + [{"r1": -0.03, "runup_z": 2.0, "stressed": False} for _ in range(10)]
+        e = BH.effects(ev)["run_up"]
+        self.assertEqual(e["cases"], 10)
+        self.assertAlmostEqual(e["d_up"], (10 / 30.0) * (0.0 - 0.75), places=4)    # up rate 0% against 75% overall, weighted 10/(10+20)
+        up, ab, d, f, why = BH.adjust(0.55, 0.05, {"runup_z": 1.5, "stressed": False}, BH.effects(ev), {"run_up"})
+        self.assertEqual(why, ["run_up"])
+        self.assertLess(up, 0.55)
+        self.assertEqual(BH.adjust(0.55, 0.05, {"runup_z": 1.5}, BH.effects(ev), set())[0], 0.55)   # not kept: no adjustment
+
+    def test_a_condition_is_kept_only_if_it_helps_out_of_sample(self):
+        rows = []
+        for i in range(40):
+            up = i % 2 == 0
+            fired = i % 4 == 0
+            row = {"t": "A", "date": "2025-%02d-01" % (1 + i % 12), "year": "2025" if i < 20 else "2026", "up": up, "move": 0.04, "base_up": 0.5, "base_abs": 0.04}
+            better = {"up": 0.7 if up else 0.3, "abs": 0.04, "fired": fired} if fired else {"up": 0.5, "abs": 0.04, "fired": False}
+            row.update({"all": better, "run_up": better, "stressed": {"up": 0.5, "abs": 0.04, "fired": False}})
+            rows.append(row)
+        out, keep = BH.judge(rows)
+        self.assertEqual(keep, set())                                              # it helped, but fired on only 10 events: too few
+        self.assertIn("too few cases", out["per_condition"]["run_up"]["why"])
 
 
 class Answers(unittest.TestCase):

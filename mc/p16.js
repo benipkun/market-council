@@ -41,6 +41,8 @@ function pred(t,q){
   var h=p("<b>"+esc(t)+"</b> reports "+when(c)+". EPS consensus "+(e.consensus!=null?"$"+e.consensus:DASH)+(e.analysts?" ("+e.analysts+" analysts)":"")+"; our estimate "+(e.ours!=null?"$"+e.ours:DASH)+". "+
     "Chance to beat "+pc(e.p_beat,0)+", in line "+pc(e.p_inline,0)+", miss "+pc(e.p_miss,0)+". Up the next day: "+pc(o.p_up_next_day,0)+", likely range "+sp(n.p10)+" to "+sp(n.p90)+
     (q.implied_move!=null?"; the options market expects "+String.fromCharCode(177)+pc(q.implied_move)+" (options to "+esc(q.implied_expiry||DASH)+"), chance of a bigger move "+pc(o.p_bigger_than_implied,0):"")+"."+few(q.few));
+  var bc=((M.X.behav||{}).cards||{})[t];
+  if(bc){h+=p("<b>Behaviour:</b> "+esc(bc.line));(bc.top_readings||[]).slice(0,3).forEach(function(s){h+=small(DOT+esc(s));});}
   h+='<div class="gap"><button class="btn sm" data-p16="'+esc(t)+'">'+(b?"Less":"The full prediction")+'</button></div>';
   if(b){
     h+=head("WHAT WILL THEY REPORT?")+p("Our EPS estimate: "+esc(e.ours_method||""))+
@@ -80,7 +82,7 @@ function render(){var el=$("v-earnings");if(!el)return;var h=html()||'<div class
 function paintToday(){var el=$("p16-host");if(!el)return;var e=M.X.earn,h="";
   if(e){var ps=e.predictions||{},soon=Object.keys(ps).filter(function(t){var c=ps[t].call||{},d=(new Date(c.date+"T12:00:00Z")-Date.now())/864e5;return d>-1&&d<=7;});
     if(soon.length)h=M.blk("EARNINGS SOON",'<span class="stg lvl">'+soon.length+'</span>',soon.map(function(t){var q=ps[t],o=q.overall||{},n=o.next_day||{};
-      return p("<b>"+esc(t)+"</b> "+when(q.call)+": beat EPS "+pc((q.eps||{}).p_beat,0)+DOT+"up next day "+pc(o.p_up_next_day,0)+DOT+"range "+sp(n.p10)+" to "+sp(n.p90)+(q.implied_move!=null?DOT+"options "+String.fromCharCode(177)+pc(q.implied_move):"")+(q.position&&q.position.p_below_stop!=null?DOT+"chance under your stop "+(q.position.p_below_stop_words||pc(q.position.p_below_stop,0)):"")+few(q.few));}).join("")+
+      return p("<b>"+esc(t)+"</b> "+when(q.call)+": beat EPS "+pc((q.eps||{}).p_beat,0)+DOT+"up next day "+pc(o.p_up_next_day,0)+DOT+"range "+sp(n.p10)+" to "+sp(n.p90)+(q.implied_move!=null?DOT+"options "+String.fromCharCode(177)+pc(q.implied_move):"")+(q.position&&q.position.p_below_stop!=null?DOT+"chance under your stop "+(q.position.p_below_stop_words||pc(q.position.p_below_stop,0)):"")+few(q.few))+(((M.X.behav||{}).cards||{})[t]?small(esc(M.X.behav.cards[t].line)):"");}).join("")+
       '<div class="gap"><a class="btn sm" href="#earnings">Open EARNINGS</a></div>',"Estimates, never promises.");}
   if(el.__h!==h){el.innerHTML=h;el.__h=h;}}
 document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-p16]"):null;if(!b)return;var t=b.getAttribute("data-p16");open[t]=!open[t];render();});

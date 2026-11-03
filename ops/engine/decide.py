@@ -1590,6 +1590,13 @@ def main():
         print("earnings: %d calls within 30 days, %d predictions, %d scored" % (len(er["calendar"]), len(er["predictions"]), er["score"].get("calls", 0)))
     except Exception as e:
         print("earnings: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # behaviour: crowd signals, the tested patterns, and the adjustment of the event forecasts (only patterns that earned their place)
+    try:
+        import behaviour
+        bh = behaviour.run(now, closes=E.read_cache)
+        print("behaviour: %d past events, kept %s, %d event cards" % (bh["events_used"], bh["backtest"].get("kept"), len(bh["cards"])))
+    except Exception as e:
+        print("behaviour: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     # the order plans: every holding and idea with its levels, the Forecaster's chances, Revolut's wording and the morning watch
     try:
         import plans as order_plans
