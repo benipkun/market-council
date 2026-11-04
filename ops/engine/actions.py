@@ -644,6 +644,29 @@ def disagreement(c, why):
     return ("%s; held back because %s." % (src, str(why).rstrip("."))) if src else None
 
 
+def _sh(x):
+    return ("%.4f" % float(x)).rstrip("0").rstrip(".")
+
+
+def short_line(a):
+    # the order itself, short enough that the whole answer fits one phone screen (Ben's rule, 4 Nov 2026);
+    # the full reasoning stays in THE DETAILS under it
+    try:
+        if a["type"] == "SELL":
+            return a["line"]
+        tail = " Stop $%.2f, take-profit $%.2f." % (a["stop"], a["take_profit"]) if a.get("stop") and a.get("take_profit") else ""
+        if "fraction of a share" in (a.get("flags") or []):
+            tail += " Fraction of a share: place it as a market order while the US market is open."
+        if a.get("expected_usd") is not None and a.get("index_usd") is not None:
+            tail += " Expected after fees (estimate) %s$%.2f, against %s$%.2f in the index fund." % ("-" if a["expected_usd"] < 0 else "+", abs(a["expected_usd"]), "-" if a["index_usd"] < 0 else "+", abs(a["index_usd"]))
+        if a["type"] == "SWAP":
+            sl = a["sell"]
+            return "SWAP: sell %s %s at $%.2f, buy %s %s at limit $%.2f ($%.2f).%s" % (_sh(sl["shares"]), sl["ticker"], sl["limit"], _sh(a["shares"]), a["ticker"], a["limit"], a["usd"], tail)
+        return "BUY %s %s at limit $%.2f ($%.2f, %s HUF) from %s.%s" % (_sh(a["shares"]), a["ticker"], a["limit"], a["usd"], "{:,}".format(int(a.get("huf") or 0)), a.get("pays_with") or "free cash", tail)
+    except Exception:
+        return a["line"]
+
+
 def final_answer(acts):
     # the one answer at the top of TODAY, in the brief, the phone message and the answer to "what should I do today?"
     real = [a for a in acts if a["type"] in ("BUY", "SELL", "SWAP")]
@@ -653,7 +676,7 @@ def final_answer(acts):
         lines = []
         for i, a in enumerate(real, 1):
             fl = [f for f in a.get("flags") or [] if f in ("unproven", "forecaster unproven live", "trails the index fund", "fraction of a share")]
-            lines.append("%d. %s%s" % (i, a["line"], (" [%s]" % ", ".join(fl)) if fl else ""))
+            lines.append("%d. %s%s" % (i, short_line(a), (" [%s]" % ", ".join(fl)) if fl else ""))
         reason = None
     else:
         top = next((a for a in acts if a["type"] == "HOLD" and not a.get("ticker")), None)
