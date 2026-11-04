@@ -276,6 +276,9 @@ def run(now, dec, answers=None, push=None):
         lab = (labels.get(c.get("key")) or {}).get("label") or default_label(c.get("key"), False)
         x = idea_plan(c, lab, fct, nav, lim, today, alarm)
         if x:
+            if not (c.get("verdict") or {}).get("buy"):
+                x["revolut"] = []                       # not in today's answer: no orders to place (4 Nov 2026)
+                x["label"] = c.get("label") or c.get("grey_reason")
             ip.append(x)
     events = watch(hp, prev, holds, today)
     sent = dict((k, v) for k, v in (prev.get("sent") or {}).items() if (today - day(v)).days < 60)

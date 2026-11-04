@@ -31,11 +31,11 @@ fc(p)+(p.expected_after_fees!=null?M.kv("Expected result after fees",(p.expected
 return M.blk(esc(p.ticker)+" "+DOT+" ORDER PLAN",'<span class="stg '+(p.kept?"paper":"live")+'">'+(p.kept?"YOUR DECISION":LAB[p.label])+'</span>',b,"Worked out from your books and your own rules. You place every order yourself.");}
 function idea(p){var v=p.verdict||{},ok=v.buy===true;
 var b='<div style="font-weight:800;margin-bottom:4px">'+esc(p.title||p.ticker)+'</div>'+
-(ok?'<div class="q"><span class="stg live">ACTION '+esc(String(v.n||""))+'</span> '+esc(v.line||"")+'</div>':'<div class="q"><b style="color:var(--tx)">Not a buy now:</b> '+esc(v.why||"held back on its card")+'</div>')+
+(ok?'<div class="q"><span class="stg live">ACTION '+esc(String(v.n||""))+'</span> '+esc(v.line||"")+'</div>':'<div class="q" style="opacity:.72"><b style="color:var(--dim)">'+esc(v.label||("REJECTED TODAY: "+(v.why||"held back on its card")))+'</b></div>')+
 M.kv("Limit entry",usd(p.limit)+", valid until "+esc(p.valid_until||DASH))+M.kv("Size your risk profile allows",usd(p.size_allowed)+(p.shares?" = "+p.shares+" share"+(p.shares===1?"":"s")+" ("+usd(p.cost)+")":""))+
 (p.note?src(esc(p.note)):"")+M.kv("Stop-loss / take-profit",usd(p.stop)+" / "+usd(p.take_profit))+M.kv("Loss if the stop is hit",usd(p.loss_at_stop)+(p.loss_share_of_portfolio!=null?" ("+pct(p.loss_share_of_portfolio)+" of the portfolio)":""))+
 M.kv("Reward to risk",p.reward_risk==null?DASH:p.reward_risk.toFixed(2))+M.kv("Fees in and out",usd(p.fees_in)+" + "+usd(p.fees_out))+fc(p)+
-(p.expected_after_fees!=null?M.kv("Expected result after fees",usd(p.expected_after_fees)):"")+'<details class="p3d"><summary>Orders in Revolut and the label</summary>'+steps(p)+labels(p)+'</details>';
+(p.expected_after_fees!=null?M.kv("Expected result after fees",usd(p.expected_after_fees)):"")+'<details class="p3d"><summary>Orders in Revolut and the label</summary>'+(ok?steps(p):'<div class="src">No orders: this idea is not in today\'s answer.</div>')+labels(p)+'</details>';
 return '<div class="p3q">'+b+'</div>';}
 function shortList(L){if(!(L||[]).length)return "";
 return M.blk("SHORT-TERM LIST",'<span class="stg paper">'+L.length+' IDEAS</span>',L.map(function(p){return '<div class="kv"'+(p.pays?"":' style="opacity:.55"')+'><span><b>'+esc(p.ticker)+'</b> <span class="stg stale">UNPROVEN</span><br><span class="fl" style="font-size:11px">'+esc(p.title||"")+'</span></span><span class="r">fees '+usd(p.fees_in)+' in, '+usd(p.fees_out)+' out<br><span class="fl" style="font-size:11px">'+(p.pays?"pays from about "+usd(p.smallest_paying):"does not pay at the sizes tested")+'</span></span></div>';}).join(""),

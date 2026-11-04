@@ -38,9 +38,15 @@ return '<div class="gap" style="display:flex;flex-wrap:wrap;gap:6px;align-items:
 '<div class="gap" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span style="font-size:12.5px">Should I sell</span><select id="p11-t" style="min-height:40px">'+held.map(function(t){return "<option>"+esc(t)+"</option>";}).join("")+'</select>'+
 '<button class="btn sm" data-p11="sell">?</button>'+(inp.monthly_huf?'<button class="btn sm" data-p11="month">This month\'s '+Number(inp.monthly_huf).toLocaleString("en-US")+' HUF</button>':"")+'</div>'+
 (note?'<div class="src">'+esc(note)+'</div>':"");}
+function finalBlk(a){var f=a.final;if(!f)return "";var ls=f.lines||[];
+return '<div class="q" style="margin-top:6px;border-left:4px solid var(--ac);padding-left:10px"><div style="font-size:18px;font-weight:800;color:var(--tx)">'+esc(f.headline)+(f.stale?' <span class="stg stale">STALE</span>':"")+'</div>'+
+(f.reason?'<div style="font-size:13px;margin-top:4px;white-space:normal">'+esc(f.reason)+'</div>':"")+ls.map(function(x){return '<div style="font-size:13px;margin-top:6px;white-space:normal;color:var(--tx)">'+esc(x)+'</div>';}).join("")+
+(f.stale?'<div style="font-size:12px;color:var(--wn);margin-top:6px">'+esc(f.stale_note||"The last run failed its contradiction check; this is the last good answer.")+'</div>':"")+
+(f.standing||[]).map(function(x){return '<div style="font-size:12px;color:var(--dim);margin-top:6px;white-space:normal">Your standing decision: '+esc(x)+'</div>';}).join("")+'</div>';}
 function html(){var a=M.X.acts;if(!a||!a.actions)return "";
 var top=a.actions[0]||{},v=view,cnt=a.actions.filter(function(x){return !x.decision;}).length;
-var body=v?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">'+esc(v.head)+'</div>'+list(v.acts)+'<div class="gap"><button class="btn sm" data-p11="back">Back to today\'s list</button></div>':list(a.actions)+((a.swap_options||[]).length?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">OTHER SWAPS: SELL THIS, BUY THIS INSTEAD</div>'+list(a.swap_options):"");
+var acts=a.final?a.actions.filter(function(x){return x.type!=="HOLD";}):a.actions;
+var body=v?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">'+esc(v.head)+'</div>'+list(v.acts)+'<div class="gap"><button class="btn sm" data-p11="back">Back to today\'s list</button></div>':finalBlk(a)+(acts.length?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">THE DETAILS</div>'+list(acts):"")+((a.swap_options||[]).length?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">OTHER SWAPS: SELL THIS, BUY THIS INSTEAD</div>'+list(a.swap_options):"");
 return M.blk("WHAT TO DO NOW",'<span class="stg '+(top.type==="HOLD"&&!top.ticker?"paper":"live")+'">'+cnt+' ACTION'+(cnt===1?"":"S")+'</span>'+((a.stale||[]).length?'<span class="stg stale" style="margin-left:6px">STALE DATA</span>':""),
 body+box(a)+reply(),
 "Worked out "+M.upd(a.as_of)+" from the books of "+esc(String(a.books_as_of||"").slice(0,16))+". "+esc(a.foot||""));}

@@ -7,6 +7,7 @@ import html
 import json
 import math
 import os
+import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "brief", "index.html")
@@ -295,7 +296,7 @@ def main():
     for c in [obj(c) for c in arr(dec.get("cards"))]:
         t = str(c.get("done_at") or c.get("closed_at") or "")
         if c.get("status") == "done" and t[:10] >= since:
-            rows += '<div class="kv"><span>Closed: {}</span><span class="r note">{}</span></div>'.format(e(c.get("title_plain") or c.get("title")), e(c.get("logged") or "done"))
+            rows += '<div class="kv"><span>Closed: {}</span><span class="r note">{}</span></div>'.format(e(re.sub(r"^(Buy|Sell)\s+", "", str(c.get("title_plain") or c.get("title") or ""))), e(c.get("logged") or "done"))
         elif c.get("status") == "open" and str(c.get("created"))[:10] >= since:
             rows += '<div class="kv"><span>New on the desk: {}</span><span class="r note">{}</span></div>'.format(e(c.get("title_plain") or c.get("title")), day(c.get("created")))
     if rows:
@@ -303,7 +304,14 @@ def main():
 
     # What to do now: the numbered action list (ops/engine/actions.py), the same one the app shows on Today
     acts = obj(load("state/actions.json"))
-    if arr(acts.get("actions")):
+    fin = obj(acts.get("final"))
+    if fin.get("text"):
+        lines = str(fin["text"]).split("\n")
+        body = '<div class="pick"><div class="pt"><span class="tk">{}</span>{}</div>{}</div>'.format(
+            e(lines[0]), ' <span class="tag">STALE</span>' if fin.get("stale") else "", "".join("<p>{}</p>".format(e(x)) for x in lines[1:]))
+        body += "".join('<p class="note">Your standing decision: {}</p>'.format(e(x)) for x in arr(fin.get("standing")))
+        sections.append(("actions", "What to do now", body + '<p class="note">{}</p>'.format(e(acts.get("foot"))), ""))
+    elif arr(acts.get("actions")):
         row = '<div class="pick"><div class="pt"><span class="tk">{}. {}</span></div><p>{}</p>{}</div>'
         why = lambda a: '<p class="note">Why: {}</p>'.format(e(a.get("why_better"))) if a.get("why_better") else ""
         rows = "".join(row.format(e(obj(a).get("n")), e(obj(a).get("type")), e(obj(a).get("line")), why(obj(a))) for a in arr(acts.get("actions")))
@@ -318,7 +326,7 @@ def main():
         x, body = obj(ex.get("exposure")), ""
         for t in arr(ex.get("trades"))[:1]:
             t = obj(t)
-            body += '<p><b>{} {} {}</b> &middot; {} &middot; idea from {}</p>'.format(e(str(t.get("action")).upper()), e(t.get("ticker")), usd(t.get("usd")), e(day(t.get("at"))), e(t.get("origin")))
+            body += '<p><b>You {} {} for {}</b> &middot; {} &middot; idea from {}</p>'.format("bought" if t.get("action") == "buy" else "sold", e(t.get("ticker")), usd(t.get("usd")), e(day(t.get("at"))), e(t.get("origin")))
             body += "".join('<div class="kv"><span>{}</span><span class="r {}">{}</span></div>'.format(e(obj(c).get("text")), "wn" if obj(c).get("status") != "ok" else "up", e(str(obj(c).get("status")).upper())) for c in arr(t.get("checks")))
         for title, key in (("By sector (cash included)", "by_sector"), ("By region", "by_region"), ("How jumpy", "by_risk")):
             body += '<p class="note"><b>{}</b>: {}</p>'.format(title, e(", ".join("{} {:.0f}%".format(obj(r).get("name"), 100 * (num(obj(r).get("pct")) or 0)) for r in arr(x.get(key)))))

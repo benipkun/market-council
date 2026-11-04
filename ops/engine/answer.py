@@ -240,6 +240,11 @@ def behaviour_facts(ts):
 def topic_answer(q, facts):
     # questions that are not about what to buy or sell, answered from the computed figures
     s = q.lower()
+    fin = (rj("state/actions.json", {}) or {}).get("final") or {}
+    if fin.get("text") and re.search(r"what (should|do|shall) i do|what to do", s) and not re.search(r"\d", s):
+        return {"answer": fin["text"].split("\n")[0] + (": " + fin["reason"] if fin.get("reason") else ""), "lines": fin.get("lines") or [],
+                "why": fin.get("lines") or [fin.get("reason") or ""], "would_change": "A new run of the decision engine (three times each weekday).",
+                "evidence": "The same answer as the top of TODAY, the brief and the phone message."}
     bf = facts.get("behaviour") or {}
     bt = next((w.upper() for w in re.findall(r"[A-Za-z]{2,6}", q) if w.upper() in bf and isinstance(bf[w.upper()], dict) and bf[w.upper()].get("readings")), None)
     if bt and any(w in s for w in ("priced in", "too bullish", "too bearish", "crowded", "everyone", "sentiment", "hype")):

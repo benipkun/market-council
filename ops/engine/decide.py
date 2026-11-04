@@ -1462,16 +1462,26 @@ def main():
         print("actions: the cards were not judged (%s: %s)" % (type(e).__name__, str(e)[:120]))
     for x in wanted:
         v = verdict.get(x.get("key"))
-        if x.get("kind") != "idea" or not v:
+        if not v:
             continue
         x["verdict"] = v
+        # one decision engine (4 Nov 2026): a card that is not in today's answer carries one label and never says buy or sell
+        if not v["buy"]:
+            x["greyed"], x["grey_reason"], x["label"] = True, v.get("label"), v.get("label")
+            if x.get("kind") != "idea" or not x.get("ticker"):
+                nm = x.get("ticker") or x.get("name") or "Plan"
+                x["title"] = x["title_plain"] = {"buy": "%s: value gap" % nm, "sell": "%s: under the maximum-loss line" % nm,
+                                                 "rebalance": "Rebalance (house strategy)"}.get(x.get("kind"), "%s (house strategy)" % nm)
+                continue
+        if x.get("kind") != "idea":
+            continue
         if x.get("forecast_line") and not actions.LIVE_PROVEN and "unproven live" not in x["forecast_line"]:
             x["forecast_line"] += " (unproven live: its live record is not yet better than always saying 50%)"
         x.setdefault("greyed", False)
         x.setdefault("grey_reason", None)
         if not v["buy"]:
             if not x.get("greyed"):
-                x["greyed"], x["grey_reason"] = True, actions.NOT_A_BUY + v["why"] + "."
+                x["greyed"], x["grey_reason"] = True, v.get("label") or (actions.NOT_A_BUY + v["why"] + ".")
             ttl = str(x.get("title") or "")
             m = re.match(r"^Buy (\S+): it (.*)$", ttl)
             if m:

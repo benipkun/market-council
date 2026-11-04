@@ -28,6 +28,7 @@ import board as BD  # noqa: E402
 import earnings as ER  # noqa: E402
 import behaviour as BH  # noqa: E402
 import prices as PR  # noqa: E402
+import consistency as CC  # noqa: E402
 import json  # noqa: E402
 import tempfile  # noqa: E402
 import quant as Q  # noqa: E402
@@ -771,6 +772,64 @@ class Prices(unittest.TestCase):
         self.assertEqual(snap["nav"], 320.0)
         self.assertTrue(PR.market_open(now))
         self.assertFalse(PR.market_open(datetime.datetime(2026, 11, 7, 15, 0, tzinfo=datetime.timezone.utc)))   # a Saturday
+
+
+class OneAnswer(unittest.TestCase):
+    # one decision engine: every card is judged once; anything outside the answer carries one label
+    def ctx(self, **kw):
+        c = Actions.ctx(Actions(), **kw)
+        c["cards"][0]["funding"] = {}
+        return c
+
+    def test_no_cash_means_not_an_action(self):
+        c = self.ctx(free_cash=0.0, cash=5.0)
+        v = A.verdicts_from(c)["SCORE:NEW"]
+        self.assertFalse(v["buy"])
+        self.assertTrue(v["label"].startswith("REJECTED TODAY: no cash"))
+        f = A.final_answer(A.today(c)[0])
+        self.assertEqual((f["headline"], f["lines"]), ("DO NOTHING TODAY", []))
+
+    def test_conflicting_inputs_are_decided_once_with_the_disagreement_shown(self):
+        c = self.ctx()
+        c["cards"].append({"kind": "buy", "status": "open", "ticker": "OTH", "id": "B1", "key": "BUY:OTH",
+                           "orders": [{"side": "buy", "ticker": "OTH", "usd": 120.0, "limit": 50.0, "stop": 48.0, "take_profit": 51.0}]})
+        c["fct"]["OTH"] = {"h": {"by": {"due": "2026-11-20", "f": {"tp_first": {"p": 0.2}, "stop_first": {"p": 0.7}}}}}
+        v = A.verdicts_from(c)["BUY:OTH"]
+        self.assertFalse(v["buy"])
+        self.assertTrue(v["disagree"].startswith("Value check (price under our fair value) says buy; held back because"))
+
+    def test_paper_ideas_and_standing_decisions_get_their_labels(self):
+        c = self.ctx()
+        c["cards"] += [{"kind": "idea", "status": "open", "ticker": "SIG", "id": "I9", "key": "RULE:dip:SIG", "entry": 10.0, "stop": 9.0, "take_profit": 12.0,
+                        "greyed": True, "grey_reason": "This rule fails its own test after costs, so the signal is shown for information only."},
+                       {"kind": "sell", "status": "open", "ticker": "KEEP", "id": "S1", "key": "SELL:KEEP"},
+                       {"kind": "idea", "status": "open", "ticker": None, "id": "C1", "key": "CORE"}]
+        v = A.verdicts_from(c)
+        self.assertEqual(v["RULE:dip:SIG"]["label"], "PAPER ONLY: being tested, not advice to trade.")
+        self.assertIn("your standing decision to keep KEEP", v["SELL:KEEP"]["label"])
+        self.assertTrue(v["CORE"]["label"].startswith("PAPER ONLY"))
+        f = A.final_answer(A.today(c)[0])
+        self.assertTrue(any("KEEP" in s for s in f["standing"]))                  # the kept holding is named under the answer
+
+    def write(self, d, rel, o):
+        p = os.path.join(d, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(o if isinstance(o, str) else json.dumps(o))
+
+    def test_the_contradiction_check_fails_on_purpose_and_passes_when_consistent(self):
+        d = tempfile.mkdtemp()
+        fin = {"headline": "DO NOTHING TODAY", "reason": "No idea is expected to make money after fees.", "lines": [], "text": "DO NOTHING TODAY\nNo idea is expected to make money after fees.",
+               "action_keys": [], "action_tickers": []}
+        self.write(d, "state/actions.json", {"final": fin})
+        self.write(d, "state/decisions.json", {"cards": [{"id": "B1", "key": "BUY:BDX", "kind": "buy", "status": "open", "title": "Buy $199.76 of BDX", "greyed": False}]})
+        self.write(d, "brief/index.html", "<p>DO NOTHING TODAY</p><p>No idea is expected to make money after fees.</p><p>Buy $199.76 of BDX</p>")
+        bad = CC.check(d)
+        self.assertTrue(any("offers a yes" in x for x in bad) and any("brief says" in x for x in bad))    # the 4 Nov contradiction, caught
+        self.write(d, "state/decisions.json", {"cards": [{"id": "B1", "key": "BUY:BDX", "kind": "buy", "status": "open", "title": "BDX: value gap", "greyed": True,
+                                                          "label": "REJECTED TODAY: no cash"}]})
+        self.write(d, "brief/index.html", "<p>DO NOTHING TODAY</p><p>No idea is expected to make money after fees.</p><p>BDX: value gap. REJECTED TODAY: no cash</p>")
+        self.assertEqual(CC.check(d), [])
 
 
 class Answers(unittest.TestCase):

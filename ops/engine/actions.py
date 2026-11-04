@@ -148,13 +148,14 @@ def candidates(ctx):
     out = []
     hold, nav, lim = ctx["hold"], ctx["nav"], ctx["limits"]
     for c in ctx["cards"]:
-        if c.get("kind") != "idea" or c.get("status") != "open" or not c.get("ticker") or c["ticker"] == "portfolio":
+        if c.get("kind") not in ("idea", "buy") or c.get("status") != "open" or not c.get("ticker") or c["ticker"] == "portfolio":
             continue
         t = c["ticker"]
-        limit = float((c.get("cost") or {}).get("limit") or ((c.get("legs") or [{}])[0].get("limit")) or c.get("entry") or 0)
+        o = ((c.get("orders") or [{}])[0] or {}) if c.get("kind") == "buy" else {}
+        limit = float((c.get("cost") or {}).get("limit") or ((c.get("legs") or [{}])[0].get("limit")) or c.get("entry") or o.get("limit") or 0)
         if not limit:
             continue
-        stop, tp = c.get("stop"), c.get("take_profit")
+        stop, tp = c.get("stop") or o.get("stop"), c.get("take_profit") or o.get("take_profit")
         fc = fct_for(ctx["fct"], t)
         up = (float(tp) / limit - 1) if tp else None
         dn = (1 - float(stop) / limit) if stop else None
@@ -165,7 +166,7 @@ def candidates(ctx):
         years = years_to((fc or {}).get("due"), ctx.get("today") or datetime.date.today())
         index_edge = ctx.get("index_mu", 0.0861) * years
         # at most what the risk profile allows for one idea: the card's size, or the risk per trade over the stop distance
-        cap = float(c.get("profile_size") or 0) or ((float(lim.get("risk_per_trade") or 0.015) * nav / dn) if dn else 0.0)
+        cap = float(c.get("profile_size") or o.get("usd") or 0) or ((float(lim.get("risk_per_trade") or 0.015) * nav / dn) if dn else 0.0)
         room = float(lim.get("stock_cap") or 0.3) * nav - (hold.get(t) or {}).get("value", 0.0)
         cap = max(0.0, min(cap, room)) if cap else max(0.0, room)
         held_back, flags, disagree = [], [], []
@@ -508,9 +509,13 @@ def today(ctx):
             a = swap_better(x, ch[0], ctx) if ch else None
         if a:
             sold.add(a["sell"]["ticker"])
+        if not a and cash < MIN_ORDER:
+            # Ben, 4 Nov 2026: an action needs its funding; without free cash or a sale it is not today's action
+            x["skip_reason"] = ("no cash left: today's free cash goes to the actions above%s" if cash < ctx["free_cash"] else "no cash: free cash is $%.2f, under the $%d minimum order%s" % (max(0.0, cash), MIN_ORDER, "%s")) % ((
+                "; it could be paid from your next monthly %s HUF" % "{:,.0f}".format(ctx["monthly_huf"])) if ctx.get("monthly_huf") else "")
+            continue
         if not a:
-            usd = min(x["cap"], cash) if cash >= MIN_ORDER else x["cap"]
-            pays = "free cash" if cash >= MIN_ORDER else ("new money: the next monthly %s HUF" % "{:,.0f}".format(ctx["monthly_huf"]) if ctx["monthly_huf"] else "new money")
+            usd, pays = min(x["cap"], cash), "free cash"
             a = buy_line(x, usd, ctx, pays)
             if a and pays == "free cash":
                 cash -= a["usd"] + a["fees"]
@@ -521,6 +526,16 @@ def today(ctx):
             acts.append(mark_tier(a, x))
             if x.get("sector"):
                 used[x["sector"]] = x["t"]
+    for c in ctx["cards"]:
+        t = c.get("ticker")
+        if c.get("kind") == "sell" and c.get("status") == "open" and t in ctx["hold"] and t not in ctx["keeps"]:
+            sn = sell_numbers(t, ctx)
+            a = {"type": "SELL", "ticker": t, "key": c.get("key"), "card": c.get("id"),
+                 "line": "SELL %s %s at limit $%.2f: proceeds $%s after $%.2f fees; %s. It has lost more than your maximum loss." % (
+                     fmt_sh(sn["shares"]), t, sn["limit"], money(sn["proceeds"]), sn["fees"], sn["tax_note"]),
+                 "head": "Sell %s %s (below your maximum-loss line)" % (fmt_sh(sn["shares"]), t)}
+            a.update(dict((k, v) for k, v in sn.items() if k not in a))
+            acts.append(a)
     acts, bad = check_lines(acts, ctx)
     ctx["self_check"] = bad
     if not acts:
@@ -552,15 +567,79 @@ def swap_options(cands, acts, ctx, n=3):
 def verdicts_from(ctx):
     # the decision desk's one judge: a card is a BUY only if it is in today's action list; otherwise it carries the reason
     acts, cands = today(ctx)
-    by_key = dict((a.get("key"), a) for a in acts if a["type"] in ("BUY", "SWAP") and a.get("key"))
+    by_key = dict((a.get("key"), a) for a in acts if a["type"] in ("BUY", "SWAP", "SELL") and a.get("key"))
+    cand = dict((x.get("key"), x) for x in cands if x.get("key"))
     out = {}
-    for x in cands:
-        a = by_key.get(x.get("key"))
+    for c in ctx["cards"]:
+        k = c.get("key")
+        if not k or c.get("status") not in ("open", None):
+            continue
+        a = by_key.get(k)
         if a:
-            out[x["key"]] = {"buy": True, "n": a["n"], "type": a["type"], "line": a["line"], "expected_usd": a.get("expected_usd"), "index_usd": a.get("index_usd")}
-        elif x.get("key"):
-            out[x["key"]] = {"buy": False, "why": x.get("skip_reason") or reason(x)}
+            out[k] = {"buy": True, "n": a["n"], "type": a["type"], "line": a["line"], "expected_usd": a.get("expected_usd"), "index_usd": a.get("index_usd"),
+                      "label": "ACTION %d IN TODAY'S ANSWER" % a["n"]}
+            continue
+        x = cand.get(k)
+        why = (x.get("skip_reason") or reason(x)) if x else other_reason(c, ctx)
+        out[k] = {"buy": False, "why": why, "label": label_for(c, why, ctx), "disagree": disagreement(c, why)}
     return out
+
+
+SOURCE = {"buy": "Value check (price under our fair value) says buy", "idea": None, "sell": "The maximum-loss rule says sell",
+          "rebalance": "The house strategy says rebalance"}
+
+
+def other_reason(c, ctx):
+    t, k = c.get("ticker"), c.get("kind")
+    if k == "sell" and t in ctx["keeps"]:
+        return "your standing decision to keep %s (target and review date) overrides the maximum-loss rule" % t
+    if k == "sell":
+        return "the share is no longer in your books"
+    if c.get("key") in ("CORE", "REBAL") or k == "rebalance":
+        return "a house-strategy plan, tracked on paper; it is not weighed as today's trade"
+    return "not a trade the action list weighs today"
+
+
+def label_for(c, why, ctx):
+    w = str(why or "")
+    if "fails its own test" in w or c.get("key") in ("CORE", "REBAL") or c.get("kind") == "rebalance":
+        return "PAPER ONLY: being tested, not advice to trade."
+    if "Waiting for the Forecaster" in w or "no forecast" in w:
+        return "WATCHING: not an action. Becomes one if the Forecaster's numbers show it makes money after fees."
+    if w.startswith("no cash"):
+        return "REJECTED TODAY: " + w
+    return "REJECTED TODAY: " + (w[0].lower() + w[1:] if w else "held back")
+
+
+def disagreement(c, why):
+    src = SOURCE.get(c.get("kind"))
+    if not src and str(c.get("key") or "").startswith("SCORE:"):
+        src = "The scorecard says buy"
+    if not src and str(c.get("key") or "").startswith("RULE:"):
+        src = "A rule signal says buy"
+    return ("%s; held back because %s." % (src, str(why).rstrip("."))) if src else None
+
+
+def final_answer(acts):
+    # the one answer at the top of TODAY, in the brief, the phone message and the answer to "what should I do today?"
+    real = [a for a in acts if a["type"] in ("BUY", "SELL", "SWAP")]
+    stand = [a["line"] for a in acts if a.get("decision") or (a["type"] == "HOLD" and a.get("ticker"))]
+    if real:
+        head = "DO THIS 1 THING" if len(real) == 1 else "DO THESE %d THINGS" % len(real)
+        lines = []
+        for i, a in enumerate(real, 1):
+            fl = [f for f in a.get("flags") or [] if f in ("unproven", "forecaster unproven live", "trails the index fund", "fraction of a share")]
+            lines.append("%d. %s%s" % (i, a["line"], (" [%s]" % ", ".join(fl)) if fl else ""))
+        reason = None
+    else:
+        top = next((a for a in acts if a["type"] == "HOLD" and not a.get("ticker")), None)
+        line = (top or {}).get("line") or "HOLD: do nothing today. No action qualifies."
+        line = line.replace("HOLD: do nothing today. ", "").replace("HOLD: ", "")
+        reason = line.split(". ")[0].rstrip(".") + "."
+        head, lines = "DO NOTHING TODAY", []
+    text = head + "\n" + (reason if not real else "\n".join(lines))
+    return {"headline": head, "reason": reason, "lines": lines, "standing": stand, "text": text,
+            "action_keys": [a.get("key") for a in real if a.get("key")], "action_tickers": sorted(set(t for a in real for t in (a.get("ticker"), (a.get("buy") or {}).get("ticker"), (a.get("sell") or {}).get("ticker")) if t))}
 
 
 def as_open(cards):
@@ -805,7 +884,19 @@ def run(now=None, dec=None, spy_price=None):
         ctx["spy"] = spy_price
     acts, cands = today(ctx)
     sells = dict((t, should_sell(t, ctx)) for t in sorted(ctx["hold"]))
-    out = {"as_of": now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "books_as_of": ctx["books_as_of"], "desk_as_of": ctx["desk_as_of"],
+    prev_final = ((rj("state/actions.json", {}) or {}).get("final") or {}).get("text")
+    fin = final_answer(acts)
+    if fin["text"] != prev_final:
+        try:
+            d = os.path.join(ROOT, "outbox", "queue")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "%s-today.json" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")), "w", encoding="utf-8") as f:
+                json.dump({"title": "Market Council: " + fin["headline"], "message": fin["text"][:900], "click": "https://benipkun.github.io/market-council/#today", "tags": ["memo"]}, f, indent=1)
+                f.write("\n")
+            fin["sent"] = True
+        except Exception:
+            pass
+    out = {"final": fin, "as_of": now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "books_as_of": ctx["books_as_of"], "desk_as_of": ctx["desk_as_of"],
            "actions": acts, "swap_options": swap_options(cands, acts, ctx), "sell_answers": sells, "stale": ctx["stale"],
            "self_check": {"rule": "every line that calls a share yours, sells it or holds it is read back against your books; a line that fails is not shown",
                           "removed": ctx.get("self_check") or []},

@@ -95,6 +95,9 @@ jobs:
           done
           # Rebuild the daily brief from the fresh results, so the brief and the app always show the same desk.
           if python ops/render_brief.py > /tmp/brief.txt 2>&1; then echo "brief: ok"; else echo "brief: not rebuilt this run"; fi
+          # the contradiction check: one answer everywhere, or the run fails and the last good answer stays up, marked STALE
+          if python ops/engine/consistency.py > /tmp/consistency.txt 2>&1; then echo "consistency: ok"; else echo "consistency: FAILED (details in the private records, state/logs/consistency.txt)"; echo consistency >> /tmp/failed; fi
+          { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/consistency.txt; } > state/logs/consistency.txt
           { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/brief.txt; } > state/logs/brief.txt
       - name: Save the results to the private records
         run: |
