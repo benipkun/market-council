@@ -160,7 +160,9 @@ def candidates(ctx):
     out = []
     hold, nav, lim = ctx["hold"], ctx["nav"], ctx["limits"]
     for c in ctx["cards"]:
-        if c.get("kind") not in ("idea", "buy") or c.get("status") != "open" or not c.get("ticker") or c["ticker"] == "portfolio":
+        # an idea you said yes to stays in the answer until the trade is in the books (4 Nov 2026: the DVN swap left the
+        # answer the moment Ben pressed yes, before he had placed it)
+        if c.get("kind") not in ("idea", "buy") or c.get("status") not in ("open", "approved") or not c.get("ticker") or c["ticker"] == "portfolio":
             continue
         t = c["ticker"]
         o = ((c.get("orders") or [{}])[0] or {}) if c.get("kind") == "buy" else {}
@@ -211,7 +213,7 @@ def candidates(ctx):
             vs_index = "expected %+.1f%% by %s if it follows its order plan (%d%% take-profit first, %d%% stop first), against %+.1f%% for the index fund over the same time" % (
                 100 * edge, fc.get("due"), round(100 * fc["tp_first"]), round(100 * (fc.get("stop_first") or 0)), 100 * index_edge)
         fund = c.get("funding") or {}
-        out.append({"t": t, "key": c.get("key"), "name": c.get("name"), "card": c.get("id"), "limit": round(limit, 2), "stop": stop, "take_profit": tp, "up": up, "dn": dn, "edge": edge,
+        out.append({"t": t, "key": c.get("key"), "name": c.get("name"), "card": c.get("id"), "approved": (str(c.get("answered_at") or "today")[:10] if c.get("status") == "approved" else None), "limit": round(limit, 2), "stop": stop, "take_profit": tp, "up": up, "dn": dn, "edge": edge,
                      "index_edge": index_edge, "years": round(years, 3), "vs_index": vs_index,
                      "sector": (ctx.get("sector") or {}).get(t), "new_sector": bool((ctx.get("sector") or {}).get(t)) and (ctx.get("sector") or {}).get(t) not in (ctx.get("held_sectors") or []),
                      "bad_change": pf.get("change"),
@@ -299,7 +301,7 @@ def buy_line(x, usd, ctx, pays):
          "expected_usd": r2(exp), "index_usd": r2(idx), "forecast": x["fc"], "evidence": x["evidence"], "flags": list(x["flags"]), "disagree": list(x["disagree"]),
          "portfolio": {"largest": largest_after(ctx["hold"], ctx["nav"], x["t"], cost, extra_cash=cost if new_money else 0.0),
                        "bad_year": r2(bad, 4), "bad_year_now": x["bad_before"], "bad_note": "scaled from the card's own figure" if bad is not None else "not worked out for this idea"},
-         "card": x["card"], "key": x.get("key"), "valid_until": x["valid_until"], "exit_rule": x["exit_rule"]}
+         "card": x["card"], "key": x.get("key"), "approved": x.get("approved"), "valid_until": x["valid_until"], "exit_rule": x["exit_rule"]}
     a["line"] = "BUY %s %s at limit $%.2f = $%s%s, fees $%.2f, paid from %s. Stop $%s, take-profit $%s." % (
         fmt_sh(sh), x["t"], x["limit"], money(cost), (" (%s HUF)" % "{:,}".format(a["huf"])) if a["huf"] else "", f_in, pays, money(x["stop"]), money(x["take_profit"]))
     if not float(sh).is_integer():
@@ -659,6 +661,8 @@ def short_line(a):
             tail += " Fraction of a share: place it as a market order while the US market is open."
         if a.get("expected_usd") is not None and a.get("index_usd") is not None:
             tail += " Expected after fees (estimate) %s$%.2f, against %s$%.2f in the index fund." % ("-" if a["expected_usd"] < 0 else "+", abs(a["expected_usd"]), "-" if a["index_usd"] < 0 else "+", abs(a["index_usd"]))
+        if a.get("approved"):
+            tail += " You said yes to it on %s; it waits for you to place it." % a["approved"]
         if a["type"] == "SWAP":
             sl = a["sell"]
             return "SWAP: sell %s %s at $%.2f, buy %s %s at limit $%.2f ($%.2f).%s" % (_sh(sl["shares"]), sl["ticker"], sl["limit"], _sh(a["shares"]), a["ticker"], a["limit"], a["usd"], tail)
@@ -667,7 +671,7 @@ def short_line(a):
         return a["line"]
 
 
-def final_answer(acts):
+def final_answer(acts, cands=None):
     # the one answer at the top of TODAY, in the brief, the phone message and the answer to "what should I do today?"
     real = [a for a in acts if a["type"] in ("BUY", "SELL", "SWAP")]
     stand = [a["line"] for a in acts if a.get("decision") or (a["type"] == "HOLD" and a.get("ticker"))]
@@ -684,8 +688,12 @@ def final_answer(acts):
         line = line.replace("HOLD: do nothing today. ", "").replace("HOLD: ", "")
         reason = line.split(". ")[0].rstrip(".") + "."
         head, lines = "DO NOTHING TODAY", []
-    text = head + "\n" + (reason if not real else "\n".join(lines))
-    return {"headline": head, "reason": reason, "lines": lines, "standing": stand, "text": text,
+    # an idea you said yes to that no longer qualifies: say so plainly, so it is not placed by mistake
+    inside = set(a.get("key") for a in real)
+    dropped = ["You said yes to %s on %s, but today it is not an action (%s): do not place it." % (x["t"], x["approved"], (x.get("skip_reason") or reason(x)).rstrip("."))
+               for x in cands or [] if x.get("approved") and x.get("key") not in inside]
+    text = head + "\n" + "\n".join(([reason] if not real else lines) + dropped)
+    return {"headline": head, "reason": reason, "lines": lines, "dropped": dropped, "standing": stand, "text": text,
             "action_keys": [a.get("key") for a in real if a.get("key")], "action_tickers": sorted(set(t for a in real for t in (a.get("ticker"), (a.get("buy") or {}).get("ticker"), (a.get("sell") or {}).get("ticker")) if t))}
 
 
@@ -932,7 +940,7 @@ def run(now=None, dec=None, spy_price=None):
     acts, cands = today(ctx)
     sells = dict((t, should_sell(t, ctx)) for t in sorted(ctx["hold"]))
     prev_final = ((rj("state/actions.json", {}) or {}).get("final") or {}).get("text")
-    fin = final_answer(acts)
+    fin = final_answer(acts, cands)
     if fin["text"] != prev_final:
         try:
             d = os.path.join(ROOT, "outbox", "queue")

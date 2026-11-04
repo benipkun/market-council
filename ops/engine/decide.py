@@ -358,6 +358,8 @@ def settle(prev_cards, answers, ledger, now):
                 c["approved_size"] = None
         if c["status"] == "approved":
             want = set((o["ticker"], o["side"]) for o in c.get("orders") or []) | set((g["ticker"], "buy") for g in c.get("legs") or [])
+            if not want and c.get("kind") == "idea" and c.get("ticker"):
+                want = {(c["ticker"], "buy")}             # an idea card has no order list: its buy is the trade (4 Nov 2026)
             got = set((e["ticker"], e["action"]) for e in trades if str(e.get("at") or "") >= str(c.get("answered_at") or ""))
             if want and (want & got):
                 c["status"], c["done_at"] = "done", now

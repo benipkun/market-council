@@ -779,6 +779,17 @@ class Prices(unittest.TestCase):
 
 
 class OneAnswer(unittest.TestCase):
+    def test_a_yes_stays_in_the_answer_until_placed(self):
+        act = {"type": "BUY", "n": 1, "key": "SCORE:DVN", "ticker": "DVN", "shares": 0.5, "limit": 47.86, "usd": 23.93, "huf": 7700, "stop": 40.7,
+               "take_profit": 62.1, "flags": [], "line": "BUY 0.5 DVN", "approved": "2026-11-04"}
+        f = A.final_answer([act], [{"t": "DVN", "key": "SCORE:DVN", "approved": "2026-11-04"}])
+        self.assertIn("You said yes to it on 2026-11-04", f["lines"][0])
+        self.assertEqual(f["dropped"], [])
+        f = A.final_answer([], [{"t": "DVN", "key": "SCORE:DVN", "approved": "2026-11-04", "skip_reason": "no cash left"}])
+        self.assertTrue(f["headline"].startswith("DO NOTHING"))
+        self.assertIn("do not place it", f["dropped"][0])
+        self.assertIn(f["dropped"][0], f["text"])
+
     def test_other_card_for_a_share_in_the_answer_points_to_it(self):
         ctx = {"cards": [{"key": "RULE:pullback:DVN:x", "ticker": "DVN", "kind": "idea", "status": "open"}], "keeps": {}}
         orig = A.today

@@ -242,7 +242,7 @@ def topic_answer(q, facts):
     s = q.lower()
     fin = (rj("state/actions.json", {}) or {}).get("final") or {}
     if fin.get("text") and re.search(r"what (should|do|shall) i do|what to do", s) and not re.search(r"\d", s):
-        return {"answer": fin["text"].split("\n")[0] + (": " + fin["reason"] if fin.get("reason") else ""), "lines": fin.get("lines") or [],
+        return {"answer": fin["text"].split("\n")[0] + (": " + fin["reason"] if fin.get("reason") else ""), "lines": (fin.get("lines") or []) + (fin.get("dropped") or []),
                 "why": fin.get("lines") or [fin.get("reason") or ""], "would_change": "A new run of the decision engine (three times each weekday).",
                 "evidence": "The same answer as the top of TODAY, the brief and the phone message."}
     bf = facts.get("behaviour") or {}
