@@ -89,11 +89,25 @@ def check(root=None):
         scan(txt, allowed, "the brief", v)
     except FileNotFoundError:
         pass
-    # today's phone messages
-    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
-    for p in glob.glob(os.path.join(ROOT, "outbox", "queue", today + "*.json")):
+    # this run's phone messages: older ones are history (an earlier answer, correct when it was sent); the newest
+    # answer message must be the answer word for word, and no other message of this run may say buy or sell
+    try:
+        t0 = datetime.datetime.strptime(str(acts.get("as_of"))[:19], "%Y-%m-%dT%H:%M:%S") - datetime.timedelta(minutes=20)
+        cutoff = t0.strftime("%Y%m%dT%H%M%S")
+    except Exception:
+        cutoff = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
+    files = sorted(glob.glob(os.path.join(ROOT, "outbox", "queue", "*.json")))
+    answers = [p for p in files if p.endswith("-today.json")]
+    for p in files:
+        name = os.path.basename(p)
+        if name[:15] < cutoff:
+            continue
         m = rj(os.path.relpath(p, ROOT), {}) or {}
-        if "contradiction" in str(m.get("title", "")).lower():
+        if "contradiction" in str(m.get("title", "")).lower() or "job failed" in str(m.get("title", "")).lower():
+            continue
+        if p.endswith("-today.json"):
+            if p == answers[-1] and str(m.get("message")) != fin["text"][:900]:
+                v.append("the newest answer message on the phone differs from the answer at the top of TODAY")
             continue
         scan(m.get("message"), allowed, "the phone message '%s'" % m.get("title"), v)
     return sorted(set(v))

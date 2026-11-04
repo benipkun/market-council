@@ -834,6 +834,13 @@ class OneAnswer(unittest.TestCase):
                                                           "label": "REJECTED TODAY: no cash"}]})
         self.write(d, "brief/index.html", "<p>DO NOTHING TODAY</p><p>No idea is expected to make money after fees.</p><p>BDX: value gap. REJECTED TODAY: no cash</p>")
         self.assertEqual(CC.check(d), [])
+        # an earlier answer message (correct when it was sent) is history, not a contradiction; the newest must match
+        self.write(d, "state/actions.json", {"final": fin, "as_of": "2026-11-04T21:13:00Z"})
+        self.write(d, "outbox/queue/20261104T205452Z-today.json", {"title": "Market Council: DO THIS 1 THING", "message": "DO THIS 1 THING" + chr(10) + "1. BUY 1 BDX"})
+        self.write(d, "outbox/queue/20261104T211354Z-today.json", {"title": "Market Council: DO NOTHING TODAY", "message": fin["text"]})
+        self.assertEqual(CC.check(d), [])
+        self.write(d, "outbox/queue/20261104T211355Z-today.json", {"title": "Market Council: DO NOTHING TODAY", "message": "DO NOTHING TODAY"})
+        self.assertTrue(any("differs" in x for x in CC.check(d)))
 
 
 class Answers(unittest.TestCase):

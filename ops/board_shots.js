@@ -35,7 +35,18 @@ const TABS = ["today", "brief", "portfolio", "map", "risk", "plans", "log", "res
       await page.screenshot({ path: path.join(out, tab + ".png"), fullPage: true, clip: { x: 0, y: 0, width: 390, height: Math.min(h, 6000) } });
       // the screen's visible text, for the contradiction check and the board (private records only)
       const text = await page.evaluate(() => { const v = document.querySelector("section.view:not([hidden])"); return v ? v.innerText.slice(0, 8000) : ""; });
-      report.push({ tab, ok: !stuck, stuck, ms: Date.now() - t0, height: h, settled: idle, text });
+      // TODAY: the first phone screen alone, and whether the whole answer ends inside it (the rule of 4 Nov 2026)
+      let top = null;
+      if (tab === "today") {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.screenshot({ path: path.join(out, "today_top.png") });
+        top = await page.evaluate(() => {
+          const h = [...document.querySelectorAll("div")].find(d => d.children.length === 0 && /^DO (NOTHING TODAY|THIS 1 THING|THESE \d+ THINGS)/.test((d.innerText || "").trim()));
+          const box = h && h.parentElement ? h.parentElement.getBoundingClientRect() : null;
+          return box ? { answer_bottom: Math.round(box.bottom), fits_first_screen: box.bottom <= 844 } : { answer_found: false };
+        });
+      }
+      report.push({ tab, ok: !stuck, stuck, ms: Date.now() - t0, height: h, settled: idle, text, top });
       if (!stuck) n++;
     } catch (e) {
       report.push({ tab, ok: false, ms: Date.now() - t0, why: String(e.message || e).slice(0, 160) });
