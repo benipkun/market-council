@@ -779,6 +779,18 @@ class Prices(unittest.TestCase):
 
 
 class OneAnswer(unittest.TestCase):
+    def test_other_card_for_a_share_in_the_answer_points_to_it(self):
+        ctx = {"cards": [{"key": "RULE:pullback:DVN:x", "ticker": "DVN", "kind": "idea", "status": "open"}], "keeps": {}}
+        orig = A.today
+        A.today = lambda c: ([{"type": "SWAP", "n": 1, "key": "SCORE:DVN", "buy": {"ticker": "DVN"}, "sell": {"ticker": "FISN"}, "line": "x"}], [])
+        try:
+            v = A.verdicts_from(ctx)["RULE:pullback:DVN:x"]
+        finally:
+            A.today = orig
+        self.assertFalse(v["buy"])
+        self.assertEqual(v["also"], 1)
+        self.assertIn("DVN is bought in action 1", v["label"])
+
     def test_tobacco_is_not_health_care(self):
         self.assertEqual(A.fix_sector("MO", "Health Care"), "Consumer Staples")
         self.assertEqual(A.fix_sector("XYZ", "Health Care", " Medicinal Chemicals and Botanical Products "), "Consumer Staples")

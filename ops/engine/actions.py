@@ -582,6 +582,14 @@ def verdicts_from(ctx):
     acts, cands = today(ctx)
     by_key = dict((a.get("key"), a) for a in acts if a["type"] in ("BUY", "SWAP", "SELL") and a.get("key"))
     cand = dict((x.get("key"), x) for x in cands if x.get("key"))
+    # a share that is in today's answer through another card: its other cards point to that action (4 Nov 2026:
+    # "DVN: ... not a buy now" next to "SWAP ... buy DVN" read as the app contradicting itself)
+    named = {}
+    for a in acts:
+        if a["type"] in ("BUY", "SWAP", "SELL"):
+            for t, how in ((a.get("ticker"), "sold" if a["type"] == "SELL" else "bought"), ((a.get("buy") or {}).get("ticker"), "bought"), ((a.get("sell") or {}).get("ticker"), "sold")):
+                if t:
+                    named.setdefault(t, (a["n"], how))
     out = {}
     for c in ctx["cards"]:
         k = c.get("key")
@@ -595,6 +603,9 @@ def verdicts_from(ctx):
         x = cand.get(k)
         why = (x.get("skip_reason") or reason(x)) if x else other_reason(c, ctx)
         out[k] = {"buy": False, "why": why, "label": label_for(c, why, ctx), "disagree": disagreement(c, why)}
+        if c.get("ticker") in named:
+            n, how = named[c["ticker"]]
+            out[k].update(also=n, label=out[k]["label"] + " %s is %s in action %d of today's answer, for another reason." % (c["ticker"], how, n), disagree=None)
     return out
 
 

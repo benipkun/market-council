@@ -1484,7 +1484,10 @@ def main():
                 x["greyed"], x["grey_reason"] = True, v.get("label") or (actions.NOT_A_BUY + v["why"] + ".")
             ttl = str(x.get("title") or "")
             m = re.match(r"^Buy (\S+): it (.*)$", ttl)
-            if m:
+            if v.get("also"):
+                # the share is in today's answer through another card: say so instead of "not a buy now"
+                x["title"] = "%s: %s (see action %d in today's answer)" % (x.get("ticker"), (m.group(2) if m else ttl.split(":")[0].strip().lower() + " signal"), v["also"])
+            elif m:
                 x["title"] = "%s %s, but it is not a buy now" % (m.group(1), m.group(2))
             elif ":" in ttl:
                 x["title"] = "%s: %s signal, but it is not a buy now" % (x.get("ticker"), ttl.split(":")[0].strip().lower())
