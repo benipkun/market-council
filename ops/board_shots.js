@@ -41,7 +41,7 @@ const TABS = ["today", "brief", "portfolio", "map", "risk", "plans", "log", "res
         await page.evaluate(() => window.scrollTo(0, 0));
         await page.screenshot({ path: path.join(out, "today_top.png") });
         top = await page.evaluate(() => {
-          const h = [...document.querySelectorAll("div")].find(d => d.children.length === 0 && /^DO (NOTHING TODAY|THIS 1 THING|THESE \d+ THINGS)/.test((d.innerText || "").trim()));
+          const h = [...document.querySelectorAll("div")].find(d => d.style.fontSize === "18px" && /^DO (NOTHING TODAY|THIS 1 THING|THESE \d+ THINGS)/.test((d.innerText || "").trim()));
           const box = h && h.parentElement ? h.parentElement.getBoundingClientRect() : null;
           return box ? { answer_bottom: Math.round(box.bottom), fits_first_screen: box.bottom <= 844 } : { answer_found: false };
         });

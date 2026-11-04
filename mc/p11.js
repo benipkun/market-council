@@ -46,6 +46,8 @@ return '<div class="q" style="margin-top:6px;border-left:4px solid var(--ac);pad
 function html(){var a=M.X.acts;if(!a||!a.actions)return "";
 var top=a.actions[0]||{},v=view,cnt=a.actions.filter(function(x){return !x.decision;}).length;
 var acts=a.final?a.actions.filter(function(x){return x.type!=="HOLD";}):a.actions;
+/* the badge and the details follow the answer at the top, also when it is the last good (STALE) one */
+if(a.final){var ks=a.final.action_keys||[];acts=acts.filter(function(x){return ks.indexOf(x.key)>=0;});cnt=(a.final.lines||[]).length;top={type:cnt?"BUY":"HOLD"};}
 var body=v?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">'+esc(v.head)+'</div>'+list(v.acts)+'<div class="gap"><button class="btn sm" data-p11="back">Back to today\'s list</button></div>':finalBlk(a)+(acts.length?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">THE DETAILS</div>'+list(acts):"")+((a.swap_options||[]).length?'<div class="fl" style="margin-top:10px;font-weight:800;font-size:11px;letter-spacing:.06em">OTHER SWAPS: SELL THIS, BUY THIS INSTEAD</div>'+list(a.swap_options):"");
 return M.blk("WHAT TO DO NOW",'<span class="stg '+(top.type==="HOLD"&&!top.ticker?"paper":"live")+'">'+cnt+' ACTION'+(cnt===1?"":"S")+'</span>'+((a.stale||[]).length?'<span class="stg stale" style="margin-left:6px">STALE DATA</span>':""),
 body+box(a)+reply(),
