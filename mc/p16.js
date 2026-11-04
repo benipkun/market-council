@@ -87,7 +87,7 @@ function paintToday(){var el=$("p16-host");if(!el)return;var e=M.X.earn,h="";
   if(el.__h!==h){el.innerHTML=h;el.__h=h;}}
 document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-p16]"):null;if(!b)return;var t=b.getAttribute("data-p16");open[t]=!open[t];render();});
 var prev=M.slots["td-dec"];
-M.slots["td-dec"]=function(){setTimeout(paintToday,0);var h=prev?prev():"";return '<div id="p16-host"></div>'+h;};
+M.slots["td-dec"]=function(){setTimeout(paintToday,0);var h=prev?prev():"";return h+'<div id="p16-host"></div>';};   /* below the answer: the answer comes first */
 MC.hooks.push(render);
 var prevRender=M.render;M.render=function(){var o=prevRender.apply(this,arguments);try{render();}catch(e){}return o;};
 setTimeout(render,0);

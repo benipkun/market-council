@@ -533,7 +533,9 @@ def run(now=None, closes=None, net=True):
     closes = closes or (lambda t: [])
     tick, held = tickers_of_interest()
     cal, failed = calendar(set(tick), today) if net else ({}, 0)
-    second = dict((k, v.get("next_earnings_date")) for k, v in ((rj("digests/latest.json", {}) or {}).get("technicals") or {}).items() if v.get("next_earnings_date"))
+    # the pipeline's date as the second source, only when it is a real date (it also writes estimates like "2027-02 (estimated)")
+    second = dict((k, str(v.get("next_earnings_date"))[:10]) for k, v in ((rj("digests/latest.json", {}) or {}).get("technicals") or {}).items()
+                  if re.match(r"^\d{4}-\d{2}-\d{2}", str(v.get("next_earnings_date") or "")))
     prev = rj("state/earnings.json", {}) or {}
     if not cal and prev.get("calendar") and failed:
         cal = dict((r["ticker"], r) for r in prev["calendar"] if day(r["date"]) >= today)   # Nasdaq unreachable: keep the last calendar

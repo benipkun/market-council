@@ -710,6 +710,10 @@ class Earnings(unittest.TestCase):
         self.assertTrue(p["few"])                                                    # 12 own calls: too few to rely on
         self.assertAlmostEqual(e["ours"], 1.1, places=3)                             # consensus moved by the median surprise (+10%)
 
+    def test_an_estimated_second_date_does_not_break_the_run(self):
+        import re as _re
+        self.assertIsNone(_re.match(r"^\d{4}-\d{2}-\d{2}", "2027-02 (estimated)"))   # the 4 Nov failure: such a date is now skipped
+
     def test_the_last_day_before_the_news_is_the_final_prediction(self):
         self.assertEqual(ER.stage_for({"date": "2026-11-04", "time": "bmo"}, datetime.date(2026, 11, 3)), "final")
         self.assertEqual(ER.stage_for({"date": "2026-11-03", "time": "amc"}, datetime.date(2026, 11, 3)), "final")
