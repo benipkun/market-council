@@ -17,6 +17,7 @@ import numpy as np
 import engine as E
 import research as RS
 import strategy as ST
+import actions as A
 
 EUROPE = ("United Kingdom", "Netherlands", "Switzerland", "Ireland", "France", "Germany", "Italy", "Spain", "Luxembourg", "Denmark", "Sweden", "Finland",
           "Belgium", "Norway")
@@ -51,7 +52,7 @@ def universe():
         if not re.fullmatch(r"[A-Z]{1,5}", sym) or not region or not cap or not px or not vol or cap < 5e9 or px < 5 or px * vol < 2e7:
             continue
         name = re.sub(r"\s+(Common Stock|Class [A-Z] .*|American Depositary .*|Ordinary Shares.*|ADS.*|Inc\. Common.*)$", "", str(r.get("name") or sym)).strip()[:60]
-        out.append({"t": sym, "name": name, "cap": cap, "px": px, "country": country, "region": region, "sector": str(r.get("sector") or "")})
+        out.append({"t": sym, "name": name, "cap": cap, "px": px, "country": country, "region": region, "sector": A.fix_sector(sym, str(r.get("sector") or ""), r.get("industry"))})
     out.sort(key=lambda x: -x["cap"])
     seen, uniq = set(), []
     for x in out:

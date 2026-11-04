@@ -27,6 +27,18 @@ import os
 import re
 import sys
 
+# Nasdaq's sector labels follow old industry codes: tobacco makers come out as Health Care ("Medicinal Chemicals and
+# Botanical Products") and the big grocers and discounters as Consumer Discretionary. Diversification uses the usual
+# sectors, so these are Consumer Staples (4 Nov 2026: "BUY MO ... same sector as your BDX (Health Care)").
+STAPLES_INDUSTRIES = ("Medicinal Chemicals and Botanical Products", "Package Goods/Cosmetics", "Food Chains")
+STAPLES = ("MO", "PM", "BTI", "WMT", "COST", "BJ", "DG", "DLTR", "TGT", "KR", "ACI", "PG", "CL", "CHD", "EL", "UL", "HLN", "KVUE", "KMB")
+
+
+def fix_sector(t, sector, industry=""):
+    if t in STAPLES or (str(industry or "").strip() in STAPLES_INDUSTRIES and t != "ECL"):
+        return "Consumer Staples"
+    return sector
+
 ROOT = os.environ.get("MC_ROOT", ".")
 FEE_PCT, FEE_MIN = 0.0025, 1.12          # the broker's fee: 0.25% of the order, at least one euro, each way
 TAX_RATE = 0.15                          # Hungarian personal income tax on share gains; losses this year offset gains
@@ -455,6 +467,7 @@ def build_ctx(dec=None):
     for t, a in ((rj("state/quant.json", {}) or {}).get("assets") or {}).items():
         if a.get("sector") and t not in sector:
             sector[t] = a.get("sector")
+    sector = dict((t, fix_sector(t, s)) for t, s in sector.items())
     return {"dec": dec, "cards": dec.get("cards") or [], "fct": (rj("state/forecasts.json", {}) or {}).get("targets") or {}, "track": rj("state/track.json", {}) or {},
             "hold": holding_map(snap), "nav": nav, "cash": cash, "limits": lim, "keeps": dec.get("keeps") or {}, "holds": dec.get("holds") or {},
             "pf": dec.get("portfolio_first") or {}, "fx": fx, "stale": stale, "free_cash": max(0.0, cash - float(lim.get("min_cash") or 0.03) * nav),

@@ -779,6 +779,11 @@ class Prices(unittest.TestCase):
 
 
 class OneAnswer(unittest.TestCase):
+    def test_tobacco_is_not_health_care(self):
+        self.assertEqual(A.fix_sector("MO", "Health Care"), "Consumer Staples")
+        self.assertEqual(A.fix_sector("XYZ", "Health Care", " Medicinal Chemicals and Botanical Products "), "Consumer Staples")
+        self.assertEqual(A.fix_sector("BDX", "Health Care", "Medical/Dental Instruments"), "Health Care")
+
     # one decision engine: every card is judged once; anything outside the answer carries one label
     def ctx(self, **kw):
         c = Actions.ctx(Actions(), **kw)
