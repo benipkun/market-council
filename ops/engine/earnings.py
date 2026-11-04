@@ -622,17 +622,23 @@ def run(now=None, closes=None, net=True):
     acts = (rj("state/actions.json", {}) or {}).get("actions") or []
     def lines_for(t):
         return [a.get("line") for a in acts if t in (a.get("ticker"), (a.get("sell") or {}).get("ticker"), (a.get("buy") or {}).get("ticker"))]
-    seen = prev.get("action_lines") or {}
+    def sig_for(t):
+        # what the action is (type and shares named), not its wording: a reworded line or a new price is no change
+        # (4 Nov 2026: a sector-label fix sent "After MO's results the action list changed")
+        return sorted("%s %s>%s" % (a.get("type"), (a.get("sell") or {}).get("ticker") or "", (a.get("buy") or {}).get("ticker") or a.get("ticker") or "")
+                      for a in acts if a.get("type") != "HOLD" and t in (a.get("ticker"), (a.get("sell") or {}).get("ticker"), (a.get("buy") or {}).get("ticker")))
+    seen = prev.get("action_sigs")
     now_lines = dict((t, lines_for(t)) for t in after)
+    now_sigs = dict((t, sig_for(t)) for t in after)
     for t, ls in now_lines.items():
-        if t in seen and seen[t] != ls and (t in held or ls):
+        if seen is not None and t in seen and seen[t] != now_sigs[t] and (t in held or now_sigs[t]):
             msg = "After %s's results the action list changed: %s" % (t, "; ".join(ls) if ls else "it no longer lists %s" % t)
             wj("outbox/queue/%s-earnings-%s.json" % (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"), t),
                {"title": "Market Council: %s after its results" % t, "message": msg[:900], "click": "https://benipkun.github.io/market-council/#today", "tags": ["chart_with_upwards_trend"]})
     live = score(read_log(), outcomes)
     bt, _ = backtest(allc)
     out = {"as_of": now, "calendar": sorted(rows_cal, key=lambda r: (r["date"], r["ticker"])), "calendar_failed_days": failed,
-           "predictions": preds, "after": after, "action_lines": now_lines, "score": summary(live, "live predictions"), "scored": live[-30:], "backtest": bt,
+           "predictions": preds, "after": after, "action_lines": now_lines, "action_sigs": now_sigs, "score": summary(live, "live predictions"), "scored": live[-30:], "backtest": bt,
            "sources": {"dates": "Nasdaq earnings calendar; checked against the pipeline's Twelve Data date", "history": "Alpha Vantage seed, kept current from Nasdaq",
                        "implied": "Cboe delayed option chain, at-the-money straddle", "prices": "the engine's daily closes", "reads": "Earnings Reader routine (agent)"},
            "honesty": HONEST + " Fewer than %d cases: too few cases to rely on. The record is judged after %d scored calls." % (FEW, JUDGE)}
