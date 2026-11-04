@@ -27,6 +27,7 @@ import tradecheck as TC  # noqa: E402
 import board as BD  # noqa: E402
 import earnings as ER  # noqa: E402
 import behaviour as BH  # noqa: E402
+import prices as PR  # noqa: E402
 import json  # noqa: E402
 import tempfile  # noqa: E402
 import quant as Q  # noqa: E402
@@ -756,6 +757,20 @@ class Behaviour(unittest.TestCase):
         out, keep = BH.judge(rows)
         self.assertEqual(keep, set())                                              # it helped, but fired on only 10 events: too few
         self.assertIn("too few cases", out["per_condition"]["run_up"]["why"])
+
+
+class Prices(unittest.TestCase):
+    def test_every_holding_gets_the_same_source_and_only_values_change(self):
+        snap = {"cash": 100.0, "positions": [{"ticker": "AAA", "qty": 2, "cost_basis": 150.0, "market_value": 160.0, "last_price": 80.0},
+                                             {"ticker": "BBB", "qty": 1, "cost_basis": 50.0, "market_value": 40.0, "last_price": 40.0}]}
+        now = datetime.datetime(2026, 11, 4, 20, 0, tzinfo=datetime.timezone.utc)
+        ch = PR.refresh(snap, fetch=lambda t: {"current_price": {"AAA": 90.0, "BBB": 40.0}[t], "last_trade_time": "2026-11-04T15:00:00"}, now=now)
+        self.assertEqual(ch, ["AAA"])
+        a = snap["positions"][0]
+        self.assertEqual((a["market_value"], a["cost_basis"], a["qty"], snap["cash"]), (180.0, 150.0, 2, 100.0))
+        self.assertEqual(snap["nav"], 320.0)
+        self.assertTrue(PR.market_open(now))
+        self.assertFalse(PR.market_open(datetime.datetime(2026, 11, 7, 15, 0, tzinfo=datetime.timezone.utc)))   # a Saturday
 
 
 class Answers(unittest.TestCase):

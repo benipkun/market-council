@@ -71,6 +71,26 @@ jobs:
             exec >&3 2>&1
           fi
           if [ -s /tmp/failed ]; then exit 1; fi
+      - name: Refresh prices
+        # one price for every holding (Cboe delayed quotes) every half hour while the US market is open, or at once on a
+        # request from the app; it always starts from the newest records, so it never overwrites a trade just applied
+        run: |
+          cp _code/ops/engine/prices.py /tmp/prices.py
+          exec 3>&1 >/tmp/prices_git.txt 2>&1
+          git config user.name "Market Council Engine"
+          git config user.email "engine@market-council.local"
+          for i in 1 2 3; do
+            git fetch -q origin main && git reset -q --hard origin/main
+            if ! MC_ROOT=. python3 /tmp/prices.py > /tmp/prices.txt 2>&1; then echo "prices: FAILED" > /tmp/prices.txt; break; fi
+            git add -A treasury/snapshot.json
+            [ -d requests ] || git ls-files --error-unmatch requests >/dev/null 2>&1 && git add -A requests || true
+            if git diff --cached --quiet; then break; fi
+            git commit -q -m "Prices $(date -u +%Y-%m-%dT%H:%MZ)"
+            if git push -q origin HEAD:main; then break; fi
+            sleep 6
+          done
+          exec >&3 2>&1
+          cat /tmp/prices.txt
       - name: Weekly heartbeat for this repository
         run: |
           cd _code
