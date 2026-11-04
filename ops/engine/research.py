@@ -180,6 +180,10 @@ def dcf(tk, fin, price, shares, beta, rf, meta, save=True):
                   "note": "Each line moves one assumption and keeps the rest: the discount rate by one point either way, starting growth by three points, the operating margin across its last three years, long-run growth by half a point, capital spending by a fifth. The range runs from the lowest to the highest result. When the price is inside it, the valuation cannot say whether the share is cheap or dear."}
     except Exception:
         frange = None
+    # card B5: a range that starts at zero says the model cannot value the company; no fair value or margin of safety is shown or used
+    cannot = bool(frange and frange.get("low") is not None and float(frange["low"]) <= 0)
+    if cannot:
+        frange["verdict"] = "cannot value"
     sens = []
     for dw in (-0.01, 0.0, 0.01):
         line = []
@@ -198,11 +202,13 @@ def dcf(tk, fin, price, shares, beta, rf, meta, save=True):
         risks.append("More than three quarters of the value sits in the years after the forecast; small changes in growth or discount rate move it a lot (see the sensitivity table).")
     if g1 >= 0.15:
         risks.append("The model starts from %.0f%% growth because that is the recent pace; it may not last." % (100 * g1))
+    if cannot:
+        risks.append("Cannot value: with one assumption moved to a reasonable end the model gives no value at all (the range starts at $0.00), so no fair value is shown and the value check skips this share.")
     if foreign:
         risks.append("Foreign company: the statements may be in another currency than the share price, so the per-share comparison is not shown.")
     out = {"status": "valued", "as_of": iso(), "statement_years": years, "assumptions": A, "forecast": rows, "terminal_value": r(tv, 0),
-           "enterprise_value": r(ev, 0), "fair_value_per_share": None if foreign else r(fair * 1000.0 / 1000.0, 2), "price": r(price, 2),
-           "margin_of_safety": None if foreign or not fair or fair <= 0 else r(1 - price / fair),
+           "enterprise_value": r(ev, 0), "fair_value_per_share": None if (foreign or cannot) else r(fair * 1000.0 / 1000.0, 2), "cannot_value": cannot and not foreign, "price": r(price, 2),
+           "margin_of_safety": None if foreign or cannot or not fair or fair <= 0 else r(1 - price / fair),
            "fair_range": None if foreign else frange,
            "sensitivity": {"wacc": [r(A["wacc"] - 0.01), r(A["wacc"]), r(A["wacc"] + 0.01)], "terminal_growth": [r(TERMINAL_G - 0.005), TERMINAL_G, r(TERMINAL_G + 0.005)], "fair_value": None if foreign else sens},
            "risks": risks,
@@ -384,7 +390,7 @@ def main():
         v = c.get("valuation") or {}
         sm = (c.get("smart_money") or {}).get("insiders") or {}
         index.append({"t": t, "as_of": c["as_of"], "held": t in held, "source": "watchlist" if t in watch else "wide screen", "name": c.get("name"),
-                      "valued": v.get("status") == "valued", "fair": v.get("fair_value_per_share"),
+                      "valued": v.get("status") == "valued", "cannot_value": bool(v.get("cannot_value")), "fair": v.get("fair_value_per_share"),
                       "fair_range": ({k: v["fair_range"].get(k) for k in ("low", "high", "most_sensitive", "verdict")} if v.get("fair_range") else None),
                       "mos": v.get("margin_of_safety"), "rating": (c.get("analysts") or {}).get("rating"), "target": (c.get("analysts") or {}).get("target_mean"),
                       "insider_buys_90d": sm.get("open_market_buys_90d"), "insider_sales_90d": sm.get("open_market_sales_90d"), "error": c.get("error")})

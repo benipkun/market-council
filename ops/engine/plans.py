@@ -93,6 +93,10 @@ def revolut_steps(t, shares, limit, stop, tp, until, held, alarm=False):
     s = []
     if not held:
         s.append("Buy: Revolut > Invest > %s > Buy > Limit order. Limit price $%.2f, %s, expiry %s. Review and confirm." % (t, limit, n, until))
+    if alarm and not held:
+        s.append("Stop alert: after the buy fills, set a price alert for %s at $%.2f. No stop order to place: if it closes below, review the position." % (t, stop))
+        s.append("Take-profit alert: set a price alert for %s at $%.2f to review the position. No sell order to place." % (t, tp))
+        return s
     if alarm:
         s.append("Maximum-loss alarm: set a price alert for %s at $%.2f. No stop order to place: if it closes below, your rules raise a sell card." % (t, stop))
         s.append("Take-profit alert: set a price alert for %s at $%.2f to review the position. No sell order to place." % (t, tp))
@@ -100,6 +104,11 @@ def revolut_steps(t, shares, limit, stop, tp, until, held, alarm=False):
     s.append("Stop-loss: %s > Sell > Stop order. Stop price $%.2f, %s. It becomes a market order at $%.2f, in regular US hours only." % (t, stop, n, stop))
     s.append("Take-profit: set a price alert for %s at $%.2f. When it rings, cancel the stop order and sell %s with a limit order at $%.2f." % (t, tp, n, tp))
     return s
+
+
+def alarm_labels(alarm):
+    # True (the old yes/no switch) means the medium and long labels; a set names the labels that are alarm-only
+    return {"medium", "long"} if alarm is True else set(alarm or ())
 
 
 def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today, alarm=False):
@@ -132,7 +141,7 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today, alarm=Fals
         tp, tp_why = round(price + 2 * (price - stop), 2), "twice the stop distance above today's price"
         until = prev.get("until") if same and prev.get("until") else (today + datetime.timedelta(days=LABELS[label]["days"])).isoformat()
         why_until = "the %s window (%s)" % (LABELS[label]["name"], LABELS[label]["words"])
-        if alarm and label in ("medium", "long") and floor and float(floor) < stop:
+        if label in alarm_labels(alarm) and floor and float(floor) < stop:
             stop, stop_why, alarm_on = round(float(floor), 2), ALARM_WHY, True
             tp_why += "; a price alert only, not an order to place"
     initial = float(prev["initial_stop"]) if same and prev.get("initial_stop") else stop
@@ -154,7 +163,7 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today, alarm=Fals
     return plan
 
 
-def idea_plan(c, label, fct, nav, lim, today):
+def idea_plan(c, label, fct, nav, lim, today, alarm=False):
     t = c.get("ticker")
     limit = float((c.get("cost") or {}).get("limit") or ((c.get("legs") or [{}])[0].get("limit")) or c.get("entry") or 0)
     stop, tp = c.get("stop"), c.get("take_profit")
@@ -175,8 +184,8 @@ def idea_plan(c, label, fct, nav, lim, today):
             "stop_why": "twice the share's normal movement over ten days (at least 5%), from the card", "loss_at_stop": r2(shares * (limit - stop) + f_in + fee(shares * stop)) if shares else None,
             "loss_share_of_portfolio": r2((shares * (limit - stop)) / nav, 4) if (nav and shares) else None, "reward_risk": r2(up / dn, 2) if dn > 0 else None,
             "fees_in": f_in, "fees_out": f_out, "smallest_paying": c.get("min_size"), "pays": any(s.get("pays") for s in c.get("sizes") or []),
-            "forecast": fc, "expected_after_fees": r2(exp), "verdict": v, "unproven": True,
-            "revolut": revolut_steps(t, shares, limit, stop, tp, valid.isoformat(), False) if shares else [],
+            "forecast": fc, "expected_after_fees": r2(exp), "verdict": v, "unproven": True, "alarm_only": label in alarm_labels(alarm),
+            "revolut": revolut_steps(t, shares, limit, stop, tp, valid.isoformat(), False, label in alarm_labels(alarm)) if shares else [],
             "note": None if shares else "One share at $%.2f costs more than the $%.2f your risk profile allows for this stop, and Revolut limit orders take whole shares only." % (limit, size)}
     return plan
 
@@ -265,7 +274,7 @@ def run(now, dec, answers=None, push=None):
         if c.get("status") != "open" or c.get("kind") != "idea" or not c.get("ticker"):
             continue
         lab = (labels.get(c.get("key")) or {}).get("label") or default_label(c.get("key"), False)
-        x = idea_plan(c, lab, fct, nav, lim, today)
+        x = idea_plan(c, lab, fct, nav, lim, today, alarm)
         if x:
             ip.append(x)
     events = watch(hp, prev, holds, today)
@@ -286,17 +295,21 @@ def run(now, dec, answers=None, push=None):
     return out
 
 
-ALARM_WHY = ("your maximum-loss line, kept as an alarm only: on 25 years of prices the medium-term stop and take-profit made less than "
-             "simply holding, before 2013 and from 2013 alike (board card B1, your yes on 29 Oct 2026)")
+ALARM_WHY = ("your maximum-loss line, kept as an alarm only: on 25 years of prices the stop and take-profit of this plan length made less than "
+             "simply holding, before 2013 and from 2013 alike (board cards B1 and B4, your yes on 29 Oct and 1 Nov 2026)")
 
 
 def alarm_mode(bt):
-    # card B1: medium and long plans keep only the maximum-loss alarm, but only if holding beat the plan in both halves of the history
-    r = next((x for x in (bt or {}).get("rules") or [] if x.get("id") == "medium"), None)
-    hv = (r or {}).get("halves") or {}
-    a, b = hv.get("before_2013") or {}, hv.get("from_2013") or {}
-    ok = all((h.get("cases") or 0) >= 1000 and h.get("without_plan") is not None and h.get("with_plan") is not None and h["without_plan"] > h["with_plan"] for h in (a, b))
-    return bool(ok)
+    # cards B1 and B4: a plan label keeps only the alarms (no stop or take-profit order) when holding beat the plan in both halves of
+    # the history, with at least 1,000 cases in each half. Medium covers medium and long; short covers short.
+    out = set()
+    for rid, labels in (("medium", ("medium", "long")), ("short", ("short",))):
+        r = next((x for x in (bt or {}).get("rules") or [] if x.get("id") == rid), None)
+        hv = (r or {}).get("halves") or {}
+        a, b = hv.get("before_2013") or {}, hv.get("from_2013") or {}
+        if all((h.get("cases") or 0) >= 1000 and h.get("without_plan") is not None and h.get("with_plan") is not None and h["without_plan"] > h["with_plan"] for h in (a, b)):
+            out.update(labels)
+    return out
 
 
 def backtest(shares, step=5, cost=COST, cal=None):

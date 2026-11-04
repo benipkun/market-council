@@ -416,6 +416,15 @@ def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, age
     if fair_rng and last and fair_rng.get("low") is not None and fair_rng.get("high") is not None:
         v = [k for k in checks if k["id"] == "value"][0]
         lo, hi = float(fair_rng["low"]), float(fair_rng["high"])
+        if lo <= 0:
+            # card B5: a range that starts at zero means the model cannot value the share; the check is skipped, neither a pass nor a fail
+            v.update({"pass": None, "unclear": True, "cannot_value": True, "reading": "cannot value: our fair-value range starts at $0.00, so the model gives no usable estimate",
+                      "detail": "cannot value: the range starts at $0.00", "line": None, "needs": "a fair-value range that does not start at zero",
+                      "margin": "no estimate, so neither a pass nor a fail"})
+            fair_rng = None
+    if fair_rng and last and fair_rng.get("low") is not None and fair_rng.get("high") is not None:
+        v = [k for k in checks if k["id"] == "value"][0]
+        lo, hi = float(fair_rng["low"]), float(fair_rng["high"])
         v["reading"] = "price $%.2f; our fair value runs from $%.2f to $%.2f across reasonable assumptions, and depends most on %s" % (last, lo, hi, fair_rng.get("most_sensitive") or "the assumptions")
         v["line"] = "price under the lowest of our fair-value estimates"
         if lo <= last <= hi:

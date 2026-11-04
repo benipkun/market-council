@@ -853,17 +853,40 @@ class Plans(unittest.TestCase):
     def test_card_b1_alarm_only_plans(self):
         halves = lambda a, b: {"rules": [{"id": "medium", "halves": {"before_2013": {"cases": 5000, "with_plan": a, "without_plan": 0.07},
                                                                       "from_2013": {"cases": 5000, "with_plan": b, "without_plan": 0.08}}}]}
-        self.assertTrue(PL.alarm_mode(halves(0.05, 0.06)))                      # holding beat the plan in both halves
-        self.assertFalse(PL.alarm_mode(halves(0.05, 0.09)))                     # not in the second half: no change
-        self.assertFalse(PL.alarm_mode({}))                                      # no split yet: no change
+        self.assertEqual(PL.alarm_mode(halves(0.05, 0.06)), {"medium", "long"})  # holding beat the plan in both halves
+        self.assertEqual(PL.alarm_mode(halves(0.05, 0.09)), set())               # not in the second half: no change
+        self.assertEqual(PL.alarm_mode({}), set())                               # no split yet: no change
         p = {"ticker": "AAA", "qty": 10, "last_price": 50.0, "market_value": 500.0, "cost_basis": 450.0}
-        x = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}, None, "long", [("d", 50.0)] * 30, {}, 1000.0, None,
-                            datetime.date(2026, 10, 30), True)
+        lv = {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}
+        x = PL.holding_plan(p, lv, None, "long", [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 30), PL.alarm_mode(halves(0.05, 0.06)))
         self.assertEqual((x["stop"], x["alarm_only"]), (31.5, True))
         self.assertTrue(any("No stop order to place" in s for s in x["revolut"]))
-        short = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}, None, "short", [("d", 50.0)] * 30, {}, 1000.0, None,
-                                datetime.date(2026, 10, 30), True)
-        self.assertFalse(short["alarm_only"])                                    # short-term plans are unchanged
+        short = PL.holding_plan(p, lv, None, "short", [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 10, 30), PL.alarm_mode(halves(0.05, 0.06)))
+        self.assertFalse(short["alarm_only"])                                    # the short split decides short plans, not the medium one
+
+    def test_card_b4_short_plans_alarm_only_when_holding_wins_both_halves(self):
+        rule = lambda a, b: {"rules": [{"id": "short", "halves": {"before_2013": {"cases": 124761, "with_plan": a, "without_plan": 0.0049},
+                                                                   "from_2013": {"cases": 193092, "with_plan": b, "without_plan": 0.0089}}}]}
+        self.assertEqual(PL.alarm_mode(rule(0.0037, 0.0075)), {"short"})
+        self.assertEqual(PL.alarm_mode(rule(0.0037, 0.0095)), set())            # the plan won the second half: unchanged
+        p = {"ticker": "AAA", "qty": 10, "last_price": 50.0, "market_value": 500.0, "cost_basis": 450.0}
+        lv = {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 31.5}]}
+        x = PL.holding_plan(p, lv, None, "short", [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 11, 4), {"short"})
+        self.assertEqual((x["stop"], x["alarm_only"]), (31.5, True))
+        self.assertFalse(any("Stop order" in s or "Sell > Stop" in s for s in x["revolut"]))
+        self.assertTrue(any("Take-profit alert" in s for s in x["revolut"]))
+        steps = PL.revolut_steps("AAA", 3, 50.0, 45.0, 60.0, "2026-11-18", False, True)
+        self.assertTrue(steps[0].startswith("Buy:"))                              # the buy is still an order; the stop and target are alerts
+        self.assertFalse(any("Stop order" in s for s in steps))
+        self.assertTrue(any("Stop alert" in s for s in steps))
+
+    def test_card_b5_a_range_starting_at_zero_is_cannot_value(self):
+        px = np.linspace(100, 120, 300)
+        r = S.score_checks(-30.0, 8.33, 0.2, px, 0.05, None, None, None, fair_rng={"low": 0.0, "high": 80.63, "most_sensitive": "the discount rate"})
+        v = [k for k in r["checks"] if k["id"] == "value"][0]
+        self.assertIsNone(v["pass"])
+        self.assertTrue(v.get("cannot_value"))
+        self.assertIn("cannot value", v["detail"])
 
     def test_a_very_jumpy_share_never_gets_a_stop_below_zero(self):
         # FISN, 29 Oct 2026: no price history, so no maximum-loss level, and a movement-based stop of -$1.28
