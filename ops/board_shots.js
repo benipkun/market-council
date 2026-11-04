@@ -35,7 +35,7 @@ const TABS = ["today", "brief", "portfolio", "map", "risk", "plans", "log", "res
       await page.screenshot({ path: path.join(out, tab + ".png"), fullPage: true, clip: { x: 0, y: 0, width: 390, height: Math.min(h, 6000) } });
       // the screen's visible text, for the contradiction check and the board (private records only)
       const text = await page.evaluate(() => { const v = document.querySelector("section.view:not([hidden])"); return v ? v.innerText.slice(0, 8000) : ""; });
-      // TODAY: the first phone screen alone, and whether the whole answer ends inside it (the rule of 4 Nov 2026)
+      // TODAY: the first phone screen alone (844 px tall, the viewport above), and whether the whole answer ends inside it (the rule of 4 Nov 2026)
       let top = null;
       if (tab === "today") {
         await page.evaluate(() => window.scrollTo(0, 0));
