@@ -664,6 +664,12 @@ class Board(unittest.TestCase):
         tr = BD.evidence(now="2026-11-01T05:41:29Z")["self_checks"]["trades"]
         self.assertEqual(tr[0]["why"], ["cash: Cash after the trade is low."])
 
+    def test_evidence_names_the_failing_questions(self):
+        self.write("state/questions_eval.json", {"as_of": "t", "passed": 1, "of": 2, "rows": [
+            {"q": "Q1?", "first_sentence_answers": True, "uses_real_numbers": True, "banned": []},
+            {"q": "Q2?", "first_sentence_answers": True, "uses_real_numbers": False, "banned": []}]})
+        self.assertEqual(BD.evidence(now="2026-11-01T05:41:29Z")["tests"]["question_tests"]["failed"], [{"q": "Q2?", "failed": ["no real numbers used"]}])
+
     def test_minutes_need_twelve_reviews_with_evidence_and_the_budget(self):
         m = self.minutes(1, 5)
         self.assertEqual(BD.check_minutes(m), [])

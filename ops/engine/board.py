@@ -78,6 +78,18 @@ def shots_age_h(shots, now):
 SHOTS_STALE_H = 36
 
 
+def failed_questions():
+    # the questions that did not pass, with the check that failed (board cycle 4, issue I27)
+    out = []
+    for r in (rj("state/questions_eval.json", {}) or {}).get("rows") or []:
+        bad = [k for k, ok in (("first sentence does not answer", r.get("first_sentence_answers")), ("no real numbers used", r.get("uses_real_numbers"))) if not ok]
+        if r.get("banned"):
+            bad.append("banned words: " + ", ".join(r["banned"]))
+        if bad:
+            out.append({"q": r.get("q"), "failed": bad})
+    return out
+
+
 def evidence(now=None):
     now = now or now_iso()
     st = rj("state/partners/statement.json", {}) or {}
@@ -99,7 +111,7 @@ def evidence(now=None):
                             "token_expires": health.get("token_expires")},
                  "failure_alerts_7d": git_log("Alert: a job failed"), "ci_runs": runs},
         "stale_data": [d for d in health.get("data") or [] if d.get("stale")],
-        "tests": {"question_tests": dict((k, (rj("state/questions_eval.json", {}) or {}).get(k)) for k in ("as_of", "passed", "of")),
+        "tests": {"question_tests": dict(dict((k, (rj("state/questions_eval.json", {}) or {}).get(k)) for k in ("as_of", "passed", "of")), failed=failed_questions()),
                   "ci_tests": [r for r in runs if isinstance(runs, list) and r["name"] in ("Tests", "Question tests")][:6] if isinstance(runs, list) else runs},
         "last_answers": [dict((k, m.get(k)) for k in ("at", "kind", "q", "question", "answer", "text", "status") if m.get(k) is not None) for m in msgs[-6:]],
         "costs": {"running": st.get("running_costs"), "questions": (rj("state/questions_eval.json", {}) or {}).get("cost")},
