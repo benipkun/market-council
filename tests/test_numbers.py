@@ -658,6 +658,12 @@ class Board(unittest.TestCase):
         self.write("state/board/shots/latest/report.json", {"at": "2026-11-01T01:00:00Z", "shots": []})
         self.assertFalse(BD.evidence(now="2026-11-01T05:41:29Z")["screenshots"]["stale"])
 
+    def test_evidence_names_why_a_logged_trade_has_a_warning(self):
+        self.write("state/exposure.json", {"trades": [{"at": "t", "action": "buy", "ticker": "ABC", "status": "warn",
+                                                       "checks": [{"name": "cash", "status": "warn", "text": "Cash after the trade is low."}, {"name": "risk", "status": "ok", "text": "fine"}]}]})
+        tr = BD.evidence(now="2026-11-01T05:41:29Z")["self_checks"]["trades"]
+        self.assertEqual(tr[0]["why"], ["cash: Cash after the trade is low."])
+
     def test_minutes_need_twelve_reviews_with_evidence_and_the_budget(self):
         m = self.minutes(1, 5)
         self.assertEqual(BD.check_minutes(m), [])

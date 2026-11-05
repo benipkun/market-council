@@ -104,7 +104,7 @@ def evidence(now=None):
         "last_answers": [dict((k, m.get(k)) for k in ("at", "kind", "q", "question", "answer", "text", "status") if m.get(k) is not None) for m in msgs[-6:]],
         "costs": {"running": st.get("running_costs"), "questions": (rj("state/questions_eval.json", {}) or {}).get("cost")},
         "self_checks": {"action_list": ((rj("state/actions.json", {}) or {}).get("self_check") or {}).get("removed"),
-                        "trades": [dict((k, t.get(k)) for k in ("at", "action", "ticker", "status")) for t in (rj("state/exposure.json", {}) or {}).get("trades") or []][:5]},
+                        "trades": [dict(dict((k, t.get(k)) for k in ("at", "action", "ticker", "status")), why=[c.get("name") + ": " + str(c.get("text"))[:140] for c in t.get("checks") or [] if c.get("status") != "ok"]) for t in (rj("state/exposure.json", {}) or {}).get("trades") or []][:5]},
         "screenshots": (dict(shots, age_h=shots_age_h(shots, now), stale=(shots_age_h(shots, now) is None or shots_age_h(shots, now) > SHOTS_STALE_H),
                              warning="Screenshots older than %d hours may not show the current app: say so before judging a screen." % SHOTS_STALE_H)
                         if shots else {"missing": "no screenshots yet: the Board screenshots job has not run"}),
