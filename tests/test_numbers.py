@@ -1024,6 +1024,19 @@ class Plans(unittest.TestCase):
         self.assertAlmostEqual(r["take_profit_first"] + r["stop_first"] + r["time_limit"], 1.0, places=2)
         self.assertGreater(r["without_plan"], 0)
 
+    def test_scorecard_buy_line_uses_alerts_when_short_plans_are_alarm_only(self):
+        def bt(w, wo):
+            return {"rules": [{"id": "short", "halves": {"before_2013": {"cases": 2000, "with_plan": w, "without_plan": wo}, "from_2013": {"cases": 2000, "with_plan": w, "without_plan": wo}}}]}
+        self.assertTrue(A.short_alarm_only(bt(0.004, 0.006)))
+        self.assertFalse(A.short_alarm_only(bt(0.008, 0.006)))
+        self.assertFalse(A.short_alarm_only({"rules": []}))
+        a = {"type": "BUY", "ticker": "ABC", "shares": 3, "limit": 10.0, "usd": 30.0, "huf": 9000, "stop": 9.0, "take_profit": 12.0, "alerts_only": True, "flags": [], "pays_with": "free cash"}
+        line = A.short_line(a)
+        self.assertIn("Price alerts, not orders", line)
+        self.assertNotIn("Stop $", line)
+        a["alerts_only"] = False
+        self.assertIn("Stop $9.00", A.short_line(a))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

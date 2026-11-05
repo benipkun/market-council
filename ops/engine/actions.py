@@ -304,6 +304,10 @@ def buy_line(x, usd, ctx, pays):
          "card": x["card"], "key": x.get("key"), "approved": x.get("approved"), "valid_until": x["valid_until"], "exit_rule": x["exit_rule"]}
     a["line"] = "BUY %s %s at limit $%.2f = $%s%s, fees $%.2f, paid from %s. Stop $%s, take-profit $%s." % (
         fmt_sh(sh), x["t"], x["limit"], money(cost), (" (%s HUF)" % "{:,}".format(a["huf"])) if a["huf"] else "", f_in, pays, money(x["stop"]), money(x["take_profit"]))
+    if str(x.get("key") or "").startswith("SCORE:") and short_alarm_only():
+        a["alerts_only"] = True
+        a["exit_rule"] = ALARM_RULE
+        a["line"] = a["line"].replace(" Stop $%s, take-profit $%s." % (money(x["stop"]), money(x["take_profit"])), alert_levels(a))
     if not float(sh).is_integer():
         a["flags"].append("fraction of a share")
         a["line"] += " " + FRACTION
@@ -650,6 +654,23 @@ def _sh(x):
     return ("%.4f" % float(x)).rstrip("0").rstrip(".")
 
 
+ALARM_RULE = "Price alerts, not orders: do not place a stop or take-profit order. If the maximum-loss alert rings, your rules raise a sell card; at the take-profit alert, review the position."
+
+
+def short_alarm_only(bt=None):
+    # cards B1 and B4 (Ben's yes): short plans keep only price alerts when holding beat the plan in both halves of history,
+    # with at least 1,000 cases in each. Same test as plans.alarm_mode for the short rule; scorecard ideas use the short plan.
+    bt = bt if bt is not None else (rj("state/plans_backtest.json", {}) or {})
+    r = next((x for x in bt.get("rules") or [] if x.get("id") == "short"), None)
+    hv = (r or {}).get("halves") or {}
+    halves = (hv.get("before_2013") or {}, hv.get("from_2013") or {})
+    return all((h.get("cases") or 0) >= 1000 and h.get("without_plan") is not None and h.get("with_plan") is not None and h["without_plan"] > h["with_plan"] for h in halves)
+
+
+def alert_levels(a):
+    return " Price alerts, not orders: maximum-loss $%.2f, take-profit $%.2f." % (a["stop"], a["take_profit"])
+
+
 def short_line(a):
     # the order itself, short enough that the whole answer fits one phone screen (Ben's rule, 4 Nov 2026);
     # the full reasoning stays in THE DETAILS under it
@@ -657,6 +678,8 @@ def short_line(a):
         if a["type"] == "SELL":
             return a["line"]
         tail = " Stop $%.2f, take-profit $%.2f." % (a["stop"], a["take_profit"]) if a.get("stop") and a.get("take_profit") else ""
+        if tail and a.get("alerts_only"):
+            tail = alert_levels(a)
         if "fraction of a share" in (a.get("flags") or []):
             tail += " Fraction of a share: place it as a market order while the US market is open."
         if a.get("expected_usd") is not None and a.get("index_usd") is not None:
