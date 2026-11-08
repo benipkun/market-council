@@ -1210,6 +1210,8 @@ return '<div class="arow"><div class="ax"><b>'+esc(a.ticker)+'</b> '+(a.dir==="b
 '<button class="link" style="margin-left:8px" data-alrm="'+esc(a.id)+'" data-line="'+esc(a.ticker+" "+a.dir+" "+a.price)+'">Remove</button></div>';
 }).join(""):'<div class="arow fl">No alerts yet. Add one below.</div>';
 }
+var WATCH_ALL=false;
+document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-watchall]"):null;if(!b)return;WATCH_ALL=!WATCH_ALL;renderWatch();});
 function renderWatch(){
 renderAlerts();
 var te=(S.digest&&S.digest.technicals)||{}, keys=Object.keys(te);
@@ -1217,7 +1219,8 @@ var picks={}; ((S.digest&&S.digest.picks)||[]).forEach(function(p){picks[p.ticke
 var scrap=((S.digest&&S.digest.scrap)||[]).slice().sort(function(a,b){return String(b.first_seen||"").localeCompare(String(a.first_seen||""));});
 keys.sort(function(a,b){var ea=te[a].region==="EU",eb=te[b].region==="EU";if(ea!==eb)return ea?1:-1;return a.localeCompare(b);});
 $("n-watch").textContent=keys.length?keys.length+" tickers":"";
-$("watch").innerHTML=keys.length?keys.map(function(k){
+var WCAP=10, wShow=WATCH_ALL?keys:keys.slice(0,WCAP);
+$("watch").innerHTML=keys.length?wShow.map(function(k){
 var t=te[k],p=num(t.price),s=num(t.sma50),rel=(p!=null&&s)?((p-s)/s)*100:null;
 var cls=rel==null?"":(rel>=0?"up":"dn");
 var hs=scrap.filter(function(x){return x.ticker===k;}).slice(0,5);
@@ -1230,7 +1233,7 @@ return '<details class="w '+cls+'"><summary><div class="wh"><span class="tk">'+e
 '<div class="hl">No headlines in the last three days.</div>')+
 '<div class="pact"><button class="btn sm" data-log="1" data-t="'+esc(k)+'" data-act="buy">Log a buy</button>'+
 '<button class="btn sm" data-altk="'+esc(k)+'">Set alert</button></div></div></details>';
-}).join(""):'<div class="msg">No ticker data yet.</div>';
+}).join("")+(keys.length>WCAP?'<div class="gap"><button class="btn sm" data-watchall="1" style="width:100%">'+(WATCH_ALL?"Show only the first "+WCAP:"Show all "+keys.length+" tickers")+'</button></div>':""):'<div class="msg">No ticker data yet.</div>';
 var sh=scrap.slice(0,40);
 $("n-feed").textContent=sh.length?sh.length+" of "+scrap.length:"";
 $("feed").innerHTML=sh.length?sh.map(function(s){

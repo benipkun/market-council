@@ -1067,5 +1067,17 @@ class EarningsScreenText(unittest.TestCase):
         self.assertIn("Beat EPS: the chance", self.js)
 
 
+class WatchlistLength(unittest.TestCase):
+    """Board issue I12: the WATCHLIST shows the first ten tickers and a 'show all' button instead of ~30 screens."""
+
+    def test_watchlist_is_capped_with_show_all(self):
+        with open(os.path.join(HERE, "..", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn("var WCAP=10", html)
+        self.assertIn("keys.slice(0,WCAP)", html)
+        self.assertIn("data-watchall", html)
+        self.assertIn('"Show all "+keys.length+" tickers"', html)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
