@@ -1079,5 +1079,15 @@ class WatchlistLength(unittest.TestCase):
         self.assertIn('"Show all "+keys.length+" tickers"', html)
 
 
+class ApprovedCardWording(unittest.TestCase):
+    """Board issue I25: a yes on a buy card must not be mistaken for a logged trade."""
+
+    def test_yes_says_nothing_is_logged_and_offers_the_log_button(self):
+        with open(os.path.join(HERE, "..", "mc", "p3.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("Your yes has not logged any trade.", js)
+        self.assertIn("Placed it at your broker? Log the ", js)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
