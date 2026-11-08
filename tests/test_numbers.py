@@ -1050,5 +1050,22 @@ class Plans(unittest.TestCase):
         self.assertIn("Stop $9.00", A.short_line(a))
 
 
+class EarningsScreenText(unittest.TestCase):
+    """Board issue I26: the 'no behaviour adjustment' note appears once, not under every share, and the table terms are explained."""
+
+    def setUp(self):
+        with open(os.path.join(HERE, "..", "mc", "p16.js"), encoding="utf-8") as f:
+            self.js = f.read()
+
+    def test_behaviour_line_only_when_adjusted(self):
+        self.assertIn('if(bc&&(bc.why||[]).length)', self.js)
+        self.assertIn('(M.X.behav.cards[t].why||[]).length', self.js)
+
+    def test_terms_explained_once_at_top(self):
+        self.assertEqual(self.js.count("No behaviour adjustment is applied to any forecast unless"), 1)
+        self.assertIn("Options expect: how far the options market says", self.js)
+        self.assertIn("Beat EPS: the chance", self.js)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
