@@ -1482,8 +1482,9 @@ def main():
         x.setdefault("greyed", False)
         x.setdefault("grey_reason", None)
         if not v["buy"]:
-            if not x.get("greyed"):
-                x["greyed"], x["grey_reason"] = True, v.get("label") or (actions.NOT_A_BUY + v["why"] + ".")
+            # refresh the label every run, so an old reason never sticks to the card (10 Nov 2026)
+            x["greyed"], x["grey_reason"] = True, v.get("label") or (actions.NOT_A_BUY + v["why"] + ".")
+            x["label"] = x["grey_reason"]
             ttl = str(x.get("title") or "")
             m = re.match(r"^Buy (\S+): it (.*)$", ttl)
             if "(paper idea" in ttl and not v.get("also"):
