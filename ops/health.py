@@ -227,6 +227,11 @@ def main():
         print("health: skipped,", api_note)
         return 0
     dates = dict((d["id"], (rj(d["path"], {}) or {}).get("as_of")) for d in DATA)
+    # the pipeline skips its cycle when the engine saw no change (cost rule, 10 Nov 2026): a fresh "nothing changed"
+    # from state/changes.json counts as the pipeline being up to date
+    ch = rj("state/changes.json", {}) or {}
+    if ch.get("as_of") and not ch.get("changed") and str(ch["as_of"]) > str(dates.get("pipeline") or ""):
+        dates["pipeline"] = ch["as_of"]
     logs = {}
     for name in LOGS:
         try:

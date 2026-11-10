@@ -14,6 +14,7 @@ return M.blk("COUNCILLOR CHALLENGE",c.stale?'<span class="stg stale">STALE INPUT
 M.kv("Size the risk profile allows",c.size_usd?esc(MC.money(c.size_usd)):"none")+
 '<div class="src">'+esc(c.size_basis||"")+(c.missing&&c.missing.length?" Missing: "+esc(c.missing.join("; "))+".":"")+'</div>',
 "Data: the digest, the engine's numbers and the paper record at the time of the verdict, "+M.upd(c.at)+". Worked out from written rules; an estimate.");};
-M.done[1]=function(){return "part";};
+/* item 1 is built only when the hourly pipeline itself runs the rewritten analysts and councillor: the newest digest carries their stamp (10 Nov 2026) */
+M.done[1]=function(){var d=(M.S&&M.S.digest)||{};return /^pipeline v2/.test(String(d.rulebook||""))?true:"part";};
 M.reload();
 })();

@@ -91,6 +91,22 @@ jobs:
           done
           exec >&3 2>&1
           cat /tmp/prices.txt
+      - name: Changes since the last pipeline cycle
+        # the hourly pipeline routine reads state/changes.json and skips its cycle when nothing changed (cost rule, 10 Nov 2026)
+        run: |
+          cp _code/ops/engine/prices.py _code/ops/engine/changes.py /tmp/
+          exec 3>&1 >/tmp/changes_git.txt 2>&1
+          for i in 1 2 3; do
+            git fetch -q origin main && git reset -q --hard origin/main
+            if ! MC_ROOT=. python3 /tmp/changes.py > /tmp/changes.txt 2>&1; then echo "changes: FAILED" > /tmp/changes.txt; break; fi
+            git add -A state/changes.json
+            if git diff --cached --quiet; then break; fi
+            git commit -q -m "Changes check $(date -u +%Y-%m-%dT%H:%MZ)"
+            if git push -q origin HEAD:main; then break; fi
+            sleep 6
+          done
+          exec >&3 2>&1
+          cat /tmp/changes.txt
       - name: Weekly heartbeat for this repository
         run: |
           cd _code
