@@ -1615,6 +1615,13 @@ def main():
         print("behaviour: %d past events, kept %s, %d event cards" % (bh["events_used"], bh["backtest"].get("kept"), len(bh["cards"])))
     except Exception as e:
         print("behaviour: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # the investment committee's plain-code half (10 Nov 2026): memo packs, the queue of due memos, scores, the MEMOS index
+    try:
+        import memos
+        mr = memos.run(closes=E.read_cache)
+        print("memos: %d due, %s of %s memos scored" % (mr["due"], mr["scored"], mr["memos"]))
+    except Exception as e:
+        print("memos: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     # the running cost for SYSTEM (10 Nov 2026): routine runs from today's commits, paid API calls from the spend file
     try:
         import costs
