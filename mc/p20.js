@@ -8,7 +8,7 @@ var M=window.MCX,MC=window.MC;if(!M||!MC)return;var esc=MC.esc,$=MC.$,DOT=" "+St
 M.extra.memos="state/memos/index.json";
 function money(v){return v==null?DASH:"$"+Number(v).toFixed(2);}
 function pct(x){return x==null?DASH:(x>=0?"+":String.fromCharCode(8722))+Math.abs(100*x).toFixed(1)+"%";}
-function li(a){return (a||[]).map(function(x){return '<div class="src" style="white-space:normal">'+String.fromCharCode(8226)+" "+esc(typeof x==="string"?x:JSON.stringify(x))+'</div>';}).join("");}
+function li(a){return (a||[]).map(function(x){return '<div class="src" style="white-space:normal">'+String.fromCharCode(8226)+" "+esc(typeof x==="string"?x:(x&&x.risk?x.risk+(x.would_show_as?". Would show as: "+x.would_show_as:""):JSON.stringify(x)))+'</div>';}).join("");}
 var TAG={APPROVE:"live",DECLINE:"stale","MORE WORK":"lvl"};
 function fl(t){return '<div class="fl" style="margin-top:8px">'+t+'</div>';}
 function memoHtml(m){var o=m.memo||{},d=o.dcf||{},v=m.vote||{},r=m.reviews||{},adv=r.advisor||{};
