@@ -18,7 +18,7 @@ fl("BUSINESS")+'<div style="white-space:normal;font-size:13px">'+esc(o.business|
 fl("MOAT")+'<div style="white-space:normal;font-size:13px">'+esc(o.moat||DASH)+'</div>'+
 fl("KEY NUMBERS")+(o.key_numbers||[]).map(function(k){return '<div class="src" style="white-space:normal">'+esc(k.name)+': <b style="color:var(--tx)">'+esc(String(k.value))+'</b> ('+esc(k.source||"no source")+')</div>';}).join("")+
 fl("DCF VALUE (ESTIMATE)")+'<div class="src" style="white-space:normal">'+dcf+'</div>'+
-fl("RISKS")+li(o.risks)+fl("WHAT WOULD CHANGE THE VIEW")+li(o.would_change_view)+
+fl("RISKS")+li(o.risks)+fl("WHAT WOULD CHANGE THE VIEW")+li(o.would_change_view)+(o.lesson?fl("WHAT THIS TEACHES")+'<div class="q" style="white-space:normal;font-size:13px">'+esc(o.lesson)+'</div>':"")+
 fl("COMMITTEE VOTE")+(v.votes||[]).map(function(x){return '<div class="src" style="white-space:normal"><b style="color:var(--tx)">'+esc(x.partner)+'</b> <span class="stg '+(TAG[x.vote]||"paper")+'">'+esc(x.vote)+'</span> '+esc(x.reason||"")+'</div>';}).join("")+
 ((v.dissent||[]).length?'<div class="src" style="white-space:normal;color:var(--wn)">Dissent: '+(v.dissent||[]).map(function(x){return esc(x.partner)+" ("+esc(x.reason||"")+")";}).join("; ")+'</div>':'<div class="src">No dissent.</div>')+
 fl("REVIEWS")+'<div class="src" style="white-space:normal">Advisor, grade '+esc(adv.grade||DASH)+": "+esc((adv.questions||[]).join(" "))+'</div>'+
@@ -33,7 +33,7 @@ function html(){var x=M.X.memos;if(!x)return "";var open=x.open||[],sc=x.scores|
 var h=M.blk("OPEN MEMOS",'<span class="stg lvl">'+open.length+'</span>',open.length?open.map(memoHtml).join(""):'<div class="msg">No memo yet. The committee writes up to two each weekday morning; next: '+esc((x.queue||[]).slice(0,4).map(function(q){return q.ticker;}).join(", "))+'.</div>',"One page per company. Values are estimates from our own model unless marked as an outside model.");
 h+=M.blk("COMMITTEE VOTES","",open.length?open.map(voteRow).join(""):'<div class="msg">No votes yet.</div>',"APPROVE adds the company to the committee's paper book only; it is not an order.");
 h+=M.blk("SCORED MEMOS",'<span class="stg paper">'+esc(String(sc.scored||0))+" OF "+esc(String(sc.memos||0))+'</span>',((x.all||[]).map(scoreRow).join("")||'<div class="msg">Nothing to score yet.</div>')+(sc.honesty?'<div class="src">'+esc(sc.honesty)+'</div>':""),esc(x.score_method||""));
-if(pv)h+=M.blk("PRIVATE COMPANIES",'<span class="stg stale">REPORT ONLY</span>',privHtml(pv),"Nothing is built or bought until you say yes.");
+if(pv)h+=M.blk("PRIVATE COMPANIES",'<span class="stg stale">'+(/^not now/.test(pv.status||"")?"NOT NOW":"REPORT ONLY")+'</span>',privHtml(pv),"Nothing is built or bought until you say yes.");
 return h;}
 function render(){var el=$("v-memos");if(!el)return;var h=html()||'<div class="msg">The memos appear after the next engine run.</div>';if(el.__h!==h){el.innerHTML=h;el.__h=h;}}
 var prevRender=M.render;M.render=function(){if(prevRender)prevRender.apply(this,arguments);render();};
