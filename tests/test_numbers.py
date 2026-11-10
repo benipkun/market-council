@@ -814,8 +814,9 @@ class OneAnswer(unittest.TestCase):
     def test_exit_before_entry(self):
         f = A.final_answer(A.today(self.ctx())[0])
         ln = f["lines"][0]
-        self.assertLess(ln.index("Exit first"), ln.index("Entry:"))
-        for w in ("stop $", "take-profit $", "size $", "valid until"):
+        # the exit comes first: as orders ("Exit first: stop ...") or, when short plans are alarm-only, as price alerts
+        stop = "stop $" if "Exit first" in ln else "maximum-loss $"
+        for w in (stop, "take-profit $", "size $", "valid until"):
             self.assertLess(ln.index(w), ln.index("Entry:"), w)
 
     def test_a_yes_stays_in_the_answer_until_placed(self):
