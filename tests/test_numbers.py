@@ -1074,7 +1074,7 @@ class Plans(unittest.TestCase):
         self.assertIn("Price alerts, not orders", line)
         self.assertNotIn("Stop $", line)
         a["alerts_only"] = False
-        self.assertIn("Stop $9.00", A.short_line(a))
+        self.assertIn("Exit first: stop $9.00", A.short_line(a))   # exit before entry (10 Nov 2026)
 
 
 class EarningsScreenText(unittest.TestCase):
