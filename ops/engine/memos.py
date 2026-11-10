@@ -190,8 +190,79 @@ def index(now=None):
                                   "private": rj("state/memos/private_data_report.json", None)})
 
 
+def learn(closes=None, now=None):
+    """The LEARN page (Ben, 10 Nov 2026): each memo's question and lesson, Ben's answers with the committee's feedback,
+    Ben's own calls (made before the committee votes) scored like the committee's, the weekly lesson cards, and the
+    next companies he can call. Answer points stay hidden until he has answered."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    closes = closes or (lambda t: [])
+    answers = []
+    for p in sorted(glob.glob(os.path.join(ROOT, "answers", "learn-*.json"))):
+        try:
+            answers.append(json.load(open(p, encoding="utf-8")))
+        except Exception:
+            pass
+    fb = rj("state/learn/feedback.json", {}) or {}
+    answered = dict(("%s|%s" % (a.get("ticker"), a.get("memo_date")), a) for a in answers if a.get("type") == "answer")
+    questions = []
+    for p in sorted(glob.glob(os.path.join(ROOT, "state", "memos", "memos", "*.json")), reverse=True):
+        try:
+            m = json.load(open(p, encoding="utf-8"))
+        except Exception:
+            continue
+        l = m.get("learn") or ({"lesson": (m.get("memo") or {}).get("lesson")} if (m.get("memo") or {}).get("lesson") else None)
+        if not l:
+            continue
+        k = "%s|%s" % (m.get("ticker"), str(m.get("date"))[:10])
+        a = answered.get(k)
+        questions.append({"ticker": m.get("ticker"), "name": m.get("name"), "memo_date": str(m.get("date"))[:10], "lesson": l.get("lesson"), "question": l.get("question"),
+                          "decision": (m.get("vote") or {}).get("decision"), "your_answer": (a or {}).get("text"),
+                          "feedback": (fb.get((a or {}).get("id")) or {}).get("feedback") if a else None,
+                          "answer_points": l.get("answer_points") if a else None})
+    spy = closes("SPY") or []
+    memo_dec = {}
+    for p in sorted(glob.glob(os.path.join(ROOT, "state", "memos", "memos", "*.json"))):
+        try:
+            m = json.load(open(p, encoding="utf-8"))
+            memo_dec.setdefault(m.get("ticker"), []).append((str(m.get("date"))[:10], (m.get("vote") or {}).get("decision")))
+        except Exception:
+            pass
+    calls = []
+    for a in answers:
+        if a.get("type") != "call":
+            continue
+        t, d0 = a.get("ticker"), str(a.get("at"))[:10]
+        cs = closes(t) or []
+        def after(series, n):
+            i = next((k for k, x in enumerate(series) if str(x[0])[:10] >= d0), None)
+            return None if i is None or i + n >= len(series) else float(series[i + n][1]) / float(series[i][1]) - 1
+        marks = {}
+        for name, n in MARKS:
+            r, rs = after(cs, n), after(spy, n)
+            if r is not None and rs is not None:
+                v = a.get("vote")
+                marks[name] = {"vs_spy": round(r - rs, 4), "right": (r > rs) if v == "APPROVE" else ((r < rs) if v == "DECLINE" else None)}
+        com = next((dc for dd, dc in memo_dec.get(t, []) if dd >= d0), None)
+        calls.append({"ticker": t, "at": d0, "your_vote": a.get("vote"), "committee": com, "marks": marks})
+    rights = [c["marks"][max(c["marks"], key=lambda z: dict(MARKS)[z])]["right"] for c in calls if c["marks"]]
+    rights = [r for r in rights if r is not None]
+    lessons = []
+    for p in sorted(glob.glob(os.path.join(ROOT, "state", "learn", "lessons", "*.json")), reverse=True)[:12]:
+        try:
+            lessons.append(json.load(open(p, encoding="utf-8")))
+        except Exception:
+            pass
+    called = set((c["ticker"], c["at"]) for c in calls)
+    nxt = [x["ticker"] for x in ((rj("state/memos/queue.json", {}) or {}).get("due") or [])][:4]
+    wj("state/learn/index.json", {"as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "questions": questions, "calls": calls, "lessons": lessons,
+                                  "next_up": [t for t in nxt if not any(c[0] == t for c in called)],
+                                  "your_record": {"scored": len(rights), "right": sum(1 for r in rights if r), "honesty": "Fewer than 20 scored calls is too few to judge." if len(rights) < 20 else ""},
+                                  "method": "Your call is measured like the committee's: from the close on the day you made it, the share against the S&P 500 fund after 1, 3, 6 and 12 months. APPROVE is right when the share beat the fund, DECLINE when it trailed it."})
+
+
 def run(closes=None, now=None):
     q = packs(now)
     s = score(closes or (lambda t: []), now)
     index(now)
+    learn(closes, now)
     return {"due": len(q), "scored": s.get("scored"), "memos": s.get("memos")}
