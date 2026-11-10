@@ -1083,7 +1083,7 @@ def desk_ideas(strat, lab_out, pos, keeps, lim, nav, log, answers, now, old=None
         ok = [c["name"] for c in r["checks"] if c["pass"]]
         no = ["%s (%s)" % (c["name"], c["detail"]) for c in r["checks"] if c["pass"] is not True]
         ideas.append(grey({"key": "SCORE:" + t, "kind": "idea", "source": "Scorecard" + (", wide screen" if r.get("source") == "wide screen" else ""), "source_id": "scorecard",
-                           "ticker": t, "name": r.get("name") or t, "title": "Buy %s: it passes %d of %d checks" % (t, r["score"], r["of"]),
+                           "ticker": t, "name": r.get("name") or t, "title": "%s passes %d of %d checks (paper idea)" % (t, r["score"], r["of"]),
                            "legs": [{"ticker": t, "name": r.get("name") or t, "weight": 1.0, "ref_price": r2(px), "limit": r2(entry), "eu": None}],
                            "entry": r2(entry), "stop": r2(entry * (1 - sp)), "take_profit": r2(entry * (1 + 2 * sp)), "stop_pct": r2(sp, 4), "target_pct": r2(2 * sp, 4),
                            "exit_rule": "Sell at the take-profit or at the stop, whichever comes first. Place the stop with the order.",
@@ -1486,15 +1486,18 @@ def main():
                 x["greyed"], x["grey_reason"] = True, v.get("label") or (actions.NOT_A_BUY + v["why"] + ".")
             ttl = str(x.get("title") or "")
             m = re.match(r"^Buy (\S+): it (.*)$", ttl)
-            if v.get("also"):
-                # the share is in today's answer through another card: say so instead of "not a buy now"
-                x["title"] = "%s: %s (see action %d in today's answer)" % (x.get("ticker"), (m.group(2) if m else ttl.split(":")[0].strip().lower() + " signal"), v["also"])
+            if "(paper idea" in ttl and not v.get("also"):
+                pass                                    # the title already says it is a paper idea (10 Nov 2026)
+            elif v.get("also"):
+                # the share is in today's answer through another card: say so instead of "not an action today"
+                base = m.group(2) if m else (ttl.split(" (paper idea")[0] if "(paper idea" in ttl else ttl.split(":")[0].strip().lower() + " signal")
+                x["title"] = "%s: %s (see action %d in today's answer)" % (x.get("ticker"), base, v["also"])
             elif m:
-                x["title"] = "%s %s, but it is not a buy now" % (m.group(1), m.group(2))
+                x["title"] = "%s %s (paper idea, not an action today)" % (m.group(1), m.group(2))
             elif ":" in ttl:
-                x["title"] = "%s: %s signal, but it is not a buy now" % (x.get("ticker"), ttl.split(":")[0].strip().lower())
+                x["title"] = "%s: %s signal (paper idea, not an action today)" % (x.get("ticker"), ttl.split(":")[0].strip().lower())
             else:
-                x["title"] = "%s: not a buy now" % x.get("ticker")
+                x["title"] = "%s: not an action today" % x.get("ticker")
             x["title_plain"] = x["title"]
     reasons = {"RULE:*": "the entry signal was for one day only", "SCORE:*": "the share no longer passes five of the seven checks", "TEST:*": "the test is over",
                "CORE": "part of the house core is now held, or the strategy changed"}
@@ -1612,6 +1615,12 @@ def main():
         print("behaviour: %d past events, kept %s, %d event cards" % (bh["events_used"], bh["backtest"].get("kept"), len(bh["cards"])))
     except Exception as e:
         print("behaviour: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # the running cost for SYSTEM (10 Nov 2026): routine runs from today's commits, paid API calls from the spend file
+    try:
+        import costs
+        print("costs: " + costs.run()["text"])
+    except Exception as e:
+        print("costs: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     # the order plans: every holding and idea with its levels, the Forecaster's chances, Revolut's wording and the morning watch
     try:
         import plans as order_plans

@@ -15,7 +15,7 @@ import re
 import sys
 
 ROOT = os.environ.get("MC_ROOT", ".")
-LABELS = ("WATCHING", "PAPER ONLY", "REJECTED TODAY", "not a buy now", "not an action", "Not a buy now", "No orders")
+LABELS = ("WATCHING", "PAPER ONLY", "PAPER IDEA", "REJECTED TODAY", "not a buy now", "not an action", "Not a buy now", "Not an action today", "No orders", "Past cases")
 ACTION = re.compile(r"\b(BUY|SELL|SWAP|Buy|Sell)\b(?:\s+[\d.,$]+(?:\s+of)?)?\s+([A-Z]{1,5})\b")
 EXIT_WORDS = re.compile(r"\b(sell with a limit order|place a stop|buy at)\b", re.I)
 

@@ -27,6 +27,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import proof as PR  # noqa: E402
+
 # Nasdaq's sector labels follow old industry codes: tobacco makers come out as Health Care ("Medicinal Chemicals and
 # Botanical Products") and the big grocers and discounters as Consumer Discretionary. Diversification uses the usual
 # sectors, so these are Consumer Staples (4 Nov 2026: "BUY MO ... same sector as your BDX (Health Care)").
@@ -45,7 +48,7 @@ TAX_RATE = 0.15                          # Hungarian personal income tax on shar
 MIN_ORDER = 100.0                        # below this the minimum fee costs more than 1% each way
 FOOT = "Output of your own system's rules and estimates. You decide and place every order."
 STALE_FEEDS = ("desk", "screen", "quant", "books")
-NOT_A_BUY = "Not a buy now: "
+NOT_A_BUY = "Not an action today: "
 FRACTION = "A fraction of a share: Revolut takes limit orders for whole shares only, so place it as a market order while the US market is open."
 
 
@@ -199,6 +202,11 @@ def candidates(ctx):
             flags.append("price from one source only")
         if not fc:
             held_back.append("no forecast yet")
+        # paper first (Ben, 10 Nov 2026): a signal raises real-money cards only after 20 paper ideas reached three months
+        # and beat the S&P 500 fund after fees; until then every idea it raises is PAPER ONLY
+        pf_ev = PR.evidence(PR.signal_of(c), ctx.get("back"), ctx["track"])
+        if pf_ev and not pf_ev["proven"] and not ctx.get("assume_proven"):     # assume_proven: tests of the order numbers only
+            held_back.insert(0, "PAPER ONLY: %s has %s paper ideas at the three-month mark" % (pf_ev["name"], pf_ev["progress"]))
         ev = evidence(c, ctx["track"], fc)
         if ev["label"] == "unproven":
             flags.append("unproven")
@@ -217,7 +225,7 @@ def candidates(ctx):
                      "index_edge": index_edge, "years": round(years, 3), "vs_index": vs_index,
                      "sector": (ctx.get("sector") or {}).get(t), "new_sector": bool((ctx.get("sector") or {}).get(t)) and (ctx.get("sector") or {}).get(t) not in (ctx.get("held_sectors") or []),
                      "bad_change": pf.get("change"),
-                     "cap": round(cap, 2), "fc": fc, "evidence": ev, "flags": flags, "disagree": disagree, "held_back": held_back,
+                     "cap": round(cap, 2), "fc": fc, "evidence": ev, "flags": flags, "disagree": disagree, "held_back": held_back, "proof": pf_ev,
                      "bad_per_usd": (pf["change"] / pf["size"]) if pf.get("change") is not None and pf.get("size") else None, "bad_before": pf.get("bad_before"),
                      "fund_sell": fund.get("sell") if fund.get("kind") == "paired_sale" else None, "fund_why": fund.get("why"),
                      "why": "; ".join(c.get("why") or [])[:300], "exit_rule": c.get("exit_rule"), "valid_until": c.get("expires")})
@@ -474,13 +482,15 @@ def build_ctx(dec=None):
         if a.get("sector") and t not in sector:
             sector[t] = a.get("sector")
     sector = dict((t, fix_sector(t, s)) for t, s in sector.items())
+    back = rj("state/backcheck.json", {}) or {}
+    split = PR.split(snap, dec.get("keeps") or {}, (lim or {}).get("side_cap"))
     return {"dec": dec, "cards": dec.get("cards") or [], "fct": (rj("state/forecasts.json", {}) or {}).get("targets") or {}, "track": rj("state/track.json", {}) or {},
             "hold": holding_map(snap), "nav": nav, "cash": cash, "limits": lim, "keeps": dec.get("keeps") or {}, "holds": dec.get("holds") or {},
             "pf": dec.get("portfolio_first") or {}, "fx": fx, "stale": stale, "free_cash": max(0.0, cash - float(lim.get("min_cash") or 0.03) * nav),
             "monthly_huf": huf, "monthly_usd": (huf / fx) if huf and fx else None, "spy": dec.get("spy_price"),
             "today": datetime.datetime.now(datetime.timezone.utc).date(),
             "index_mu": float(((rj("state/quant.json", {}) or {}).get("opt") or {}).get("rf") or 0.04) + 0.05,
-            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector, "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}),
+            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector, "back": back, "split": split, "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}),
             "held_sectors": sorted(set(sector.get(p.get("ticker")) for p in snap.get("positions") or [] if sector.get(p.get("ticker"))))}
 
 
@@ -513,11 +523,32 @@ def number(acts):
     return acts
 
 
+def core_buy(usd, ctx):
+    # core first (Ben, 10 Nov 2026): money no proven stock idea uses goes to the S&P 500 index fund
+    px = float(ctx["spy"])
+    sh = shares_for(usd - fee(usd), px)
+    cost = round(sh * px, 2)
+    if cost < MIN_ORDER:
+        return None
+    return {"type": "BUY", "ticker": "SPY", "core": True, "key": "CORE:SPY", "shares": sh, "limit": round(px, 2), "usd": cost,
+            "huf": round(cost * ctx["fx"]) if ctx["fx"] else None, "fees": fee(cost), "pays_with": "free cash", "flags": ["index fund: no edge claimed"],
+            "evidence": {"label": "benchmark", "text": "the S&P 500 index fund every idea is measured against"},
+            "expected_usd": r2(cost * ctx.get("index_mu", 0.0861) - 2 * fee(cost)), "expected_note": "over a year at the engine's index assumption (%.1f%% a year), an estimate" % (100 * ctx.get("index_mu", 0.0861)),
+            "line": "BUY %s SPY (S&P 500 index fund, the core) at limit $%.2f = $%s%s, fees $%.2f: core first, because no stock idea has proven itself on paper yet.%s" % (
+                fmt_sh(sh), px, money(cost), (" (%s HUF)" % "{:,}".format(round(cost * ctx["fx"]))) if ctx["fx"] else "", fee(cost), "" if float(sh).is_integer() else " " + FRACTION)}
+
+
 def today(ctx):
     cands = candidates(ctx)
     good = sorted([x for x in cands if qualifies(x)], key=rank)
     acts, cash, used, sold = [], ctx["free_cash"], {}, set()
     for x in good:
+        sp = ctx.get("split") or {}
+        if sp.get("over"):
+            x["skip_reason"] = "the side portion for stock ideas is full: " + sp.get("text", "")
+            continue
+        if sp.get("side_room_usd") is not None:
+            x["cap"] = min(x["cap"], sp["side_room_usd"])
         if x.get("sector") and x["sector"] in used:
             x["skip_reason"] = "for diversification: %s is already in this list for %s" % (used[x["sector"]], x["sector"])
             continue
@@ -554,6 +585,10 @@ def today(ctx):
                      fmt_sh(sn["shares"]), t, sn["limit"], money(sn["proceeds"]), sn["fees"], sn["tax_note"]),
                  "head": "Sell %s %s (below your maximum-loss line)" % (fmt_sh(sn["shares"]), t)}
             a.update(dict((k, v) for k, v in sn.items() if k not in a))
+            acts.append(a)
+    if not [a for a in acts if a["type"] in ("BUY", "SWAP")] and ctx.get("spy") and cash >= MIN_ORDER and not ctx["stale"]:
+        a = core_buy(cash, ctx)
+        if a:
             acts.append(a)
     acts, bad = check_lines(acts, ctx)
     ctx["self_check"] = bad
@@ -604,11 +639,11 @@ def verdicts_from(ctx):
         a = by_key.get(k)
         if a:
             out[k] = {"buy": True, "n": a["n"], "type": a["type"], "line": a["line"], "expected_usd": a.get("expected_usd"), "index_usd": a.get("index_usd"),
-                      "label": "ACTION %d IN TODAY'S ANSWER" % a["n"]}
+                      "label": "ACTION %d IN TODAY'S ANSWER" % a["n"], "proof": ((cand.get(k) or {}).get("proof") or {}).get("text")}
             continue
         x = cand.get(k)
         why = (x.get("skip_reason") or reason(x)) if x else other_reason(c, ctx)
-        out[k] = {"buy": False, "why": why, "label": label_for(c, why, ctx), "disagree": disagreement(c, why)}
+        out[k] = {"buy": False, "why": why, "label": label_for(c, why, ctx), "disagree": disagreement(c, why), "proof": ((x or {}).get("proof") or {}).get("text")}
         if c.get("ticker") in named:
             n, how = named[c["ticker"]]
             out[k].update(also=n, label=out[k]["label"] + " %s is %s in action %d of today's answer, for another reason." % (c["ticker"], how, n), disagree=None)
@@ -632,6 +667,8 @@ def other_reason(c, ctx):
 
 def label_for(c, why, ctx):
     w = str(why or "")
+    if w.startswith("PAPER ONLY"):
+        return "PAPER ONLY: being tested, not advice to trade. " + w[len("PAPER ONLY: "):][:1].upper() + w[len("PAPER ONLY: ") + 1:] + "."
     if "fails its own test" in w or c.get("key") in ("CORE", "REBAL") or c.get("kind") == "rebalance":
         return "PAPER ONLY: being tested, not advice to trade."
     if "Waiting for the Forecaster" in w or "no forecast" in w:
@@ -677,9 +714,14 @@ def short_line(a):
     try:
         if a["type"] == "SELL":
             return a["line"]
-        tail = " Stop $%.2f, take-profit $%.2f." % (a["stop"], a["take_profit"]) if a.get("stop") and a.get("take_profit") else ""
-        if tail and a.get("alerts_only"):
-            tail = alert_levels(a)
+        if a.get("core"):
+            return "BUY %s SPY, the S&P 500 fund (core first). Exit: none planned, the core is held for the long term. Size $%.2f (%s HUF). Entry: limit $%.2f, from free cash." % (
+                _sh(a["shares"]), a["usd"], "{:,}".format(int(a.get("huf") or 0)), a["limit"])
+        ex = ""
+        if a.get("stop") and a.get("take_profit"):
+            ex = (alert_levels(a).strip() + " " if a.get("alerts_only") else "Exit first: stop $%.2f, take-profit $%.2f; " % (a["stop"], a["take_profit"])) + "size $%.2f%s; valid until %s." % (
+                a["usd"], (" (%s HUF)" % "{:,}".format(int(a["huf"]))) if a.get("huf") else "", a.get("valid_until") or "the card's end")
+        tail = ""
         if "fraction of a share" in (a.get("flags") or []):
             tail += " Fraction of a share: place it as a market order while the US market is open."
         if a.get("expected_usd") is not None and a.get("index_usd") is not None:
@@ -688,8 +730,8 @@ def short_line(a):
             tail += " You said yes to it on %s; it waits for you to place it." % a["approved"]
         if a["type"] == "SWAP":
             sl = a["sell"]
-            return "SWAP: sell %s %s at $%.2f, buy %s %s at limit $%.2f ($%.2f).%s" % (_sh(sl["shares"]), sl["ticker"], sl["limit"], _sh(a["shares"]), a["ticker"], a["limit"], a["usd"], tail)
-        return "BUY %s %s at limit $%.2f ($%.2f, %s HUF) from %s.%s" % (_sh(a["shares"]), a["ticker"], a["limit"], a["usd"], "{:,}".format(int(a.get("huf") or 0)), a.get("pays_with") or "free cash", tail)
+            return "SWAP %s for %s. %s Entry: sell %s %s at $%.2f, buy %s %s at limit $%.2f.%s" % (sl["ticker"], a["ticker"], ex, _sh(sl["shares"]), sl["ticker"], sl["limit"], _sh(a["shares"]), a["ticker"], a["limit"], tail)
+        return "BUY %s %s. %s Entry: limit $%.2f, paid from %s.%s" % (_sh(a["shares"]), a["ticker"], ex, a["limit"], a.get("pays_with") or "free cash", tail)
     except Exception:
         return a["line"]
 
@@ -735,6 +777,12 @@ def why_nothing(cands, ctx):
         return "Data is stale (%s), so every buy waits until it updates." % ", ".join(ctx["stale"])
     if not cands:
         return "There is no open idea card, so nothing beats what you hold or the index fund after fees."
+    if any(str((x.get("held_back") or [""])[0]).startswith("PAPER ONLY") for x in cands):
+        # paper first and core first (10 Nov 2026): one sentence, the real reason
+        cash = float(ctx.get("free_cash") or 0)
+        money_part = ("and $%.0f of free cash is under the $%d minimum order, so it waits; new money goes to the S&P 500 fund (core first)" % (cash, MIN_ORDER)
+                      if cash < MIN_ORDER else "so new money goes to the S&P 500 fund (core first)")
+        return "No stock idea has proven itself on paper yet (each signal needs %d paper ideas at the three-month mark that beat the S&P 500 fund after fees), %s." % (PR.PAPER_MIN, money_part)
     parts = ["%s: %s" % (x["t"], reason(x)) for x in cands[:6]]
     return "No idea is expected to make money after fees. " + "; ".join(parts) + "."
 
@@ -976,6 +1024,8 @@ def run(now=None, dec=None, spy_price=None):
             pass
     out = {"final": fin, "as_of": now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "books_as_of": ctx["books_as_of"], "desk_as_of": ctx["desk_as_of"],
            "actions": acts, "swap_options": swap_options(cands, acts, ctx), "sell_answers": sells, "stale": ctx["stale"],
+           "proof": {"signals": PR.table(ctx.get("back"), ctx["track"]), "split": ctx.get("split"), "paper_min": PR.PAPER_MIN, "mark": "three months",
+                     "rule": "Paper first: a signal raises cards for real money only after %d of its paper ideas have reached the three-month mark and, on average, beat the S&P 500 fund after fees. Core first: money no proven idea uses goes to the S&P 500 fund; stock ideas are capped at %.0f%% of the portfolio; UBER is a declared conviction bet with its own target and review date." % (PR.PAPER_MIN, 100 * (ctx.get("split") or {}).get("side_cap", PR.SIDE_CAP))},
            "self_check": {"rule": "every line that calls a share yours, sells it or holds it is read back against your books; a line that fails is not shown",
                           "removed": ctx.get("self_check") or []},
            "monthly_answer": plan_amount(ctx["monthly_usd"], ctx) if ctx["monthly_usd"] else None,

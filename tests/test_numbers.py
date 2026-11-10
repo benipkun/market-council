@@ -419,7 +419,8 @@ class Actions(unittest.TestCase):
         c = {"cards": [card], "fct": fct, "track": {"count": 32, "checks": {"quality": {"state": "unproven"}, "trend": {"state": "proven"}}},
              "hold": A.holding_map(snap), "nav": 1200.0, "cash": 300.0, "limits": {"stock_cap": 0.3, "min_cash": 0.03},
              "keeps": {"KEEP": {"target": 80.0, "by": "2027-10-05", "chance_touch": 0.79}}, "holds": {}, "pf": {}, "fx": 330.0, "stale": [],
-             "free_cash": 264.0, "monthly_huf": 120000.0, "monthly_usd": 363.64, "spy": 50.0, "today": datetime.date(2026, 10, 14), "index_mu": 0.0861}
+             "free_cash": 264.0, "monthly_huf": 120000.0, "monthly_usd": 363.64, "spy": 50.0, "today": datetime.date(2026, 10, 14), "index_mu": 0.0861,
+             "assume_proven": True}
         c.update(kw)
         return c
 
@@ -456,7 +457,8 @@ class Actions(unittest.TestCase):
         self.assertAlmostEqual(acts[0]["expected_usd"], 1.76, places=2)                            # 100 x 4% - 2 x $1.12
         c["fct"]["NEW"]["h"]["by"]["f"]["tp_first"]["p"] = 0.1                                       # 1.6% - 2.4%: loses money
         acts, cands = A.today(c)
-        self.assertEqual((acts[0]["type"], acts[0]["ticker"]), ("HOLD", None))
+        # core first (10 Nov 2026): with no stock idea to buy, the free cash goes to the S&P 500 fund
+        self.assertEqual((acts[0]["type"], acts[0]["ticker"], acts[0].get("core")), ("BUY", "SPY", True))
 
     def year_ctx(self, **kw):
         # NEW trails the index fund (tier 2); in a year the Forecaster's middle outcome is +8% for NEW and -10% for OLD
@@ -791,6 +793,31 @@ class Prices(unittest.TestCase):
 
 
 class OneAnswer(unittest.TestCase):
+    def test_paper_first_then_core_first(self):
+        # a signal without 20 three-month paper ideas raises no real-money card; the free cash goes to the S&P 500 fund
+        c = self.ctx(assume_proven=False)
+        v = A.verdicts_from(c)["SCORE:NEW"]
+        self.assertFalse(v["buy"])
+        self.assertTrue(v["label"].startswith("PAPER ONLY: being tested"), v["label"])
+        self.assertIn("0 of 20", v["label"])
+        f = A.final_answer(A.today(c)[0])
+        self.assertEqual(f["headline"], "DO THIS 1 THING")
+        self.assertIn("SPY, the S&P 500 fund (core first)", f["lines"][0])
+        self.assertNotIn("buy now", f["text"].lower())
+
+    def test_the_side_portion_cap_holds_back_stock_ideas(self):
+        c = self.ctx(split={"over": True, "text": "Stock ideas use 53% of the portfolio against a cap of 25%."})
+        v = A.verdicts_from(c)["SCORE:NEW"]
+        self.assertFalse(v["buy"])
+        self.assertIn("side portion", v["why"])
+
+    def test_exit_before_entry(self):
+        f = A.final_answer(A.today(self.ctx())[0])
+        ln = f["lines"][0]
+        self.assertLess(ln.index("Exit first"), ln.index("Entry:"))
+        for w in ("stop $", "take-profit $", "size $", "valid until"):
+            self.assertLess(ln.index(w), ln.index("Entry:"), w)
+
     def test_a_yes_stays_in_the_answer_until_placed(self):
         act = {"type": "BUY", "n": 1, "key": "SCORE:DVN", "ticker": "DVN", "shares": 0.5, "limit": 47.86, "usd": 23.93, "huf": 7700, "stop": 40.7,
                "take_profit": 62.1, "flags": [], "line": "BUY 0.5 DVN", "approved": "2026-11-04"}

@@ -59,6 +59,16 @@ def check(now=None, quote=None):
 
 def main():
     out = check()
+    # every push to the records starts the Trade Inbox routine, so write only when the answer changes, or every 3 hours
+    # to keep it fresh for the pipeline's gate (which accepts up to 4 hours)
+    old = rj("state/changes.json", {}) or {}
+    try:
+        age = (datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(str(old.get("as_of")).replace("Z", "+00:00"))).total_seconds()
+    except Exception:
+        age = 1e9
+    if old and old.get("changed") == out["changed"] and old.get("reasons") == out["reasons"] and age < 3 * 3600:
+        print("changes: same as %s, not rewritten (%s)" % (old.get("as_of"), "CHANGED" if out["changed"] else "nothing new"))
+        return
     with open(os.path.join(ROOT, "state", "changes.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
         f.write("\n")
