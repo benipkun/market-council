@@ -224,7 +224,7 @@ def close(n, now=None, phone=True):
            "scores": scores, "first_scores": first,
            "opened": len([i for i in issues if i.get("first_cycle") == n]), "closed": len([i for i in issues if i.get("closed_cycle") == n]),
            "open_total": len([i for i in issues if i.get("status") == "open"]), "reality": real, "board_wrong": flag, "minutes_problems": probs,
-           "budget": c.get("budget")}
+           "budget": c.get("budget"), "fixes": c.get("fixes") or []}   # board cycle 6: the phone line counted 0 fixed without these
     wj("state/board/latest.json", dict(c, closed_at=now))
     sb["cycles"] = [x for x in sb["cycles"] if x["n"] != n] + [row]
     sb["cycles"].sort(key=lambda x: x["n"])

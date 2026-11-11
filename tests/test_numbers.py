@@ -695,6 +695,11 @@ class Board(unittest.TestCase):
         self.assertIn("ideas_vs_index", r2["board_wrong"])
         self.assertIn("average 6.0/10 (+2.0)", t2)
         self.assertEqual([c["n"] for c in json.load(open(os.path.join(self.d, "state/board/scoreboard.json")))["cycles"]], [1, 2])
+        m3 = self.minutes(3, 5)                                               # board cycle 6: accepted fixes reach the phone line
+        m3["fixes"] = [{"issue": "I1", "commit": "abc", "accepted": True}, {"issue": "I2", "commit": "def", "accepted": False}]
+        self.write("state/board/cycles/3.json", m3)
+        r3, t3 = BD.close(3, "2026-11-04T08:00:00Z", phone=False)
+        self.assertIn("Fixed on its own: 1.", t3)
 
 
 class Earnings(unittest.TestCase):
@@ -1161,6 +1166,10 @@ class BoardCycle6(unittest.TestCase):
                     if copies or saves:
                         for m in local:
                             self.assertIn("ops/engine/%s.py" % m, line, "%s copies or saves actions.py without %s.py" % (name, m))
+
+    def test_phone_line_counts_accepted_fixes(self):
+        row = {"n": 6, "avg": 4.0, "fixes": [{"issue": "I1", "accepted": True}, {"issue": "I2", "accepted": True}, {"issue": "I3", "accepted": False}]}
+        self.assertIn("Fixed on its own: 2.", BD.phone_text(row, None, [], []))
 
 
 if __name__ == "__main__":
