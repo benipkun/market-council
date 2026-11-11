@@ -56,9 +56,9 @@ note:s.status==="live"?(s.of?s.ok+" of "+s.of+" symbols":"reachable"):(s.status=
 return out;}
 function renderStrip(){
 var el=$("strip");if(!el)return;var q=X.quant,s=q&&q.stress,src=sources().filter(function(x){return !x.opt;}),live=src.filter(function(x){return x.ok;}).length;
-el.innerHTML=(s?'<button class="stg lvl" data-tab="system" style="background:none">DOOMSDAY LEVEL: '+esc(String(s.level).toUpperCase())+'</button>'+tag(q.as_of,14)
-:'<span class="stg stale">DOOMSDAY LEVEL: NO DATA YET</span>')+
-'<button class="stg '+(live===src.length?"live":"stale")+'" data-tab="system" style="background:none">SOURCES '+live+'/'+src.length+' LIVE</button>';}
+el.innerHTML=(s?'<button class="stg lvl" data-tab="system" style="background:none">MARKET STRESS: '+esc(String(s.level).toUpperCase())+'</button>'+tag(q.as_of,14)
+:'<span class="stg stale">MARKET STRESS: NO DATA YET</span>')+
+'<button class="stg '+(live===src.length?"live":"stale")+'" data-tab="system" style="background:none">DATA '+live+' OF '+src.length+' WORKING</button>';}
 
 /* ---------- today: decisions first ---------- */
 function renderTodayTop(){var el=$("td-dec");if(!el)return;
