@@ -441,9 +441,18 @@ def hold_keep(t, ctx):
                        "bad_year": pfk.get("bad_as_held"), "bad_year_at_cap": pfk.get("bad_at_cap")}}
     hp = (ctx["holds"].get(t) or {})
     floor = next((l.get("price") for l in hp.get("levels") or [] if "Maximum-loss" in str(l.get("name"))), None)
-    a["line"] = "HOLD %s: your decision. Target $%s by %s; the model gives %s to touch it first%s." % (
+    # board cycle 6 (Lena, I34): this chance is a random-walk formula (decide.py), not the Forecaster, and it has no live
+    # record of its own, so it always carries that label, the figure with no assumed return, and the chance on the date
+    extra = []
+    if k.get("chance_touch_no_drift") is not None:
+        extra.append("%d%% with no assumed return" % round(100 * k["chance_touch_no_drift"]))
+    if k.get("chance_above_on_date") is not None:
+        extra.append("%d%% to be above it on the date" % round(100 * k["chance_above_on_date"]))
+    a["line"] = "HOLD %s: your decision. Target $%s by %s; a random-walk model gives %s to touch it first%s (a model estimate, not a scored forecast)." % (
         t, money(k.get("target")), k.get("by"), ("%d%%" % round(100 * k["chance_touch"])) if k.get("chance_touch") is not None else "no figure",
-        "" if LIVE_PROVEN else " (unproven live)")
+        (" (" + "; ".join(extra) + ")") if extra else "")
+    if not LIVE_PROVEN:
+        a["line"] += " (unproven live)"
     eff = []
     if pfk.get("share") and pfk.get("cap"):
         eff.append("it is %d%% of the portfolio against your %d%% limit" % (round(100 * pfk["share"]), round(100 * pfk["cap"])))

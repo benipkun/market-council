@@ -125,7 +125,19 @@ def judge_data(item, as_of, now):
     return out
 
 
-def assess(runs_by, dates, logs, price, old, now):
+def research_empty(index):
+    """Board cycle 6 (I33): the research run said 'ok' for 30 hours while the outside source gave no statements, ratings
+    or targets for any company. Several cards and not one valued, rated or with a target means the source is down."""
+    cards = [c for c in (index or {}).get("cards") or [] if isinstance(c, dict)]
+    if len(cards) < 5:
+        return None
+    if any(c.get("valued") or c.get("rating") or c.get("target") for c in cards):
+        return None
+    return ("Research: the outside source gave no financial statements, ratings or analyst targets for any of %d companies "
+            "in the run of %s, so fair values are missing everywhere." % (len(cards), str((index or {}).get("as_of") or "?")[:16]))
+
+
+def assess(runs_by, dates, logs, price, old, now, research=None):
     # everything below is arithmetic on the inputs; reading files and calling GitHub happens in main()
     jobs = [judge_job(j, runs_by.get(j["id"]) or [], now) for j in JOBS]
     data = [judge_data(d, dates.get(d["id"]), now) for d in DATA]
@@ -143,6 +155,9 @@ def assess(runs_by, dates, logs, price, old, now):
         problems.append({"key": "price:held", "alert": True,
                          "text": "Price check: %d share%s failed the comparison with the second source; %s held back." % (
                              held, "" if held == 1 else "s", "its cards are" if held == 1 else "their cards are")})
+    empty = research_empty(research)
+    if empty:
+        problems.append({"key": "data:research:empty", "alert": True, "text": empty})
     for name, bad in sorted((logs or {}).items()):
         if bad:
             problems.append({"key": "script:%s" % name, "alert": False, "text": "The %s script reported an error in its last run." % name})
@@ -240,7 +255,7 @@ def main():
         except Exception:
             logs[name] = False
     price = (rj("state/decisions.json", {}) or {}).get("price_check")
-    out, send, over = assess(runs_by, dates, logs, price, old, now)
+    out, send, over = assess(runs_by, dates, logs, price, old, now, research=rj("research/cards/index.json", None))
     # the records token has an expiry date; when it lapses every job stops, so warn ten days ahead
     exp = (os.environ.get("TOKEN_EXPIRES") or "").strip()
     if exp:
