@@ -798,6 +798,29 @@ class Prices(unittest.TestCase):
 
 
 class OneAnswer(unittest.TestCase):
+    def test_a_withdrawn_idea_is_announced(self):
+        # board issue I23: an action that drops off the list is said plainly on TODAY, with no buy or sell wording
+        import tempfile as _t
+        d = _t.mkdtemp(); os.makedirs(os.path.join(d, "state")); old = A.ROOT
+        try:
+            A.ROOT = d
+            json.dump({"final": {"text": "DO THIS 1 THING", "action_keys": ["SCORE:NEW"]}}, open(os.path.join(d, "state", "actions.json"), "w"))
+            c = self.ctx(assume_proven=False)
+            c["cards"][0]["status"], c["cards"][0]["closed_why"] = "withdrawn", "it no longer passes five of the seven checks"
+            c.update(books_as_of="2026-11-11", desk_as_of="2026-11-11", inputs={})
+            orig = A.build_ctx
+            A.build_ctx = lambda dec=None: c
+            try:
+                A.run()
+            finally:
+                A.build_ctx = orig
+            fin = json.load(open(os.path.join(d, "state", "actions.json")))["final"]
+            self.assertTrue(fin["withdrawn"] and "no longer an action" in fin["withdrawn"][0])
+            self.assertIn(fin["withdrawn"][0], fin["text"])
+            self.assertTrue(any(x.endswith("-withdrawn.json") for x in os.listdir(os.path.join(d, "outbox", "queue"))))
+        finally:
+            A.ROOT = old
+
     def test_paper_first_then_core_first(self):
         # a signal without 20 three-month paper ideas raises no real-money card; the free cash goes to the S&P 500 fund
         c = self.ctx(assume_proven=False)

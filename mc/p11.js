@@ -41,6 +41,7 @@ return '<div class="gap" style="display:flex;flex-wrap:wrap;gap:6px;align-items:
 function finalBlk(a){var f=a.final;if(!f)return "";var ls=f.lines||[];
 return '<div class="q" style="margin-top:6px;border-left:4px solid var(--ac);padding-left:10px"><div style="font-size:18px;font-weight:800;color:var(--tx)">'+esc(f.headline)+(f.stale?' <span class="stg stale">STALE</span>':"")+'</div>'+
 (f.reason?'<div style="font-size:13px;margin-top:4px;white-space:normal">'+esc(f.reason)+'</div>':"")+ls.map(function(x){return '<div style="font-size:13px;margin-top:6px;white-space:normal;color:var(--tx)">'+esc(x)+'</div>';}).join("")+
+(f.withdrawn||[]).map(function(x){return '<div style="font-size:13px;margin-top:6px;white-space:normal;color:var(--wn)">'+esc(x)+'</div>';}).join("")+
 (f.dropped||[]).map(function(x){return '<div style="font-size:13px;margin-top:6px;white-space:normal;color:var(--wn)">'+esc(x)+'</div>';}).join("")+
 (f.stale?'<div style="font-size:12px;color:var(--wn);margin-top:6px">'+esc(f.stale_note||"The last run failed its contradiction check; this is the last good answer.")+'</div>':"")+
 (f.standing||[]).map(function(x){return '<div style="font-size:12px;color:var(--dim);margin-top:6px;white-space:normal">Your standing decision: '+esc(x)+'</div>';}).join("")+'</div>';}

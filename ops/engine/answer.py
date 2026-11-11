@@ -329,6 +329,12 @@ def topic_answer(q, facts):
                 "would_change": "Buying %s first." % t, "evidence": "Your books."}
     if s.startswith("why") and ("no trade" in s or "nothing" in s or "no buy" in s):
         lines = (facts.get("system_answer") or {}).get("lines") or [""]
+        fin = (rj("state/actions.json", {}) or {}).get("final") or {}
+        if fin.get("headline", "").startswith("DO NOTHING") and fin.get("reason"):
+            # the same reason as the top of TODAY, word for word (board issue I38, 11 Nov 2026)
+            return {"answer": "Because " + fin["reason"][0].lower() + fin["reason"][1:], "why": [fin["reason"]],
+                    "would_change": "A signal reaching 20 paper ideas at the three-month mark that beat the S&P 500 fund after fees, or at least $100 of free cash for the core fund.",
+                    "evidence": "The same answer as the top of TODAY."}
         return {"answer": "Because no idea beats the same money in the index fund after fees right now.", "why": [x.strip() for x in lines[0].replace("HOLD: do nothing today. ", "").split("; ")[:3] if x.strip()],
                 "would_change": "An idea whose expected result after fees beats the index fund.", "evidence": "The action list's own rule; the checks behind ideas are unproven so far."}
     if "risk" in s:

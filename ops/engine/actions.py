@@ -1020,8 +1020,31 @@ def run(now=None, dec=None, spy_price=None):
         ctx["spy"] = spy_price
     acts, cands = today(ctx)
     sells = dict((t, should_sell(t, ctx)) for t in sorted(ctx["hold"]))
-    prev_final = ((rj("state/actions.json", {}) or {}).get("final") or {}).get("text")
+    prev = (rj("state/actions.json", {}) or {}).get("final") or {}
+    prev_final = prev.get("text")
     fin = final_answer(acts, cands)
+    # a buy or swap that was on the list and is gone now is said plainly (board issue I23, 11 Nov 2026: a withdrawn swap
+    # went unannounced and only one leg of it was placed)
+    gone = [k for k in prev.get("action_keys") or [] if k not in fin["action_keys"]]
+    cards = dict((c.get("key"), c) for c in ctx["cards"])
+    wd = []
+    for k in gone:
+        c = cards.get(k) or {}
+        if c.get("status") in ("done", "approved"):
+            continue
+        t = c.get("ticker") or str(k).split(":")[-1]
+        wd.append("Withdrawn: the earlier idea for %s is no longer an action (%s). If you already placed part of it, log what you did." % (t, str(c.get("closed_why") or "the numbers behind it changed").rstrip(".")))
+    fin["withdrawn"] = wd or [x for x in prev.get("withdrawn") or [] if prev_final == fin["text"]]
+    if wd:
+        fin["text"] += "\n" + "\n".join(wd)
+        try:
+            d = os.path.join(ROOT, "outbox", "queue")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "%s-withdrawn.json" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")), "w", encoding="utf-8") as f:
+                json.dump({"title": "Market Council: an idea was withdrawn", "message": "An idea from the earlier list is no longer an action. If you placed part of it, open TODAY and log what you did.",
+                           "click": "https://benipkun.github.io/market-council/#today", "tags": ["warning"]}, f, indent=1)
+        except Exception:
+            pass
     if fin["text"] != prev_final:
         try:
             d = os.path.join(ROOT, "outbox", "queue")
