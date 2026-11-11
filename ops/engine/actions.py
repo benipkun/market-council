@@ -477,7 +477,8 @@ def build_ctx(dec=None):
     fee_cfg = (dec.get("desk") or {}).get("fee") or {}
     global FEE_PCT, FEE_MIN, LIVE_PROVEN
     lf = (rj("state/partners/statement.json", {}) or {}).get("forecasts") or {}
-    LIVE_PROVEN = bool((lf.get("checked") or 0) >= LIVE_MIN and lf.get("error") is not None and lf.get("error_always_50") is not None and lf["error"] < lf["error_always_50"])
+    # proven live only after the Forecaster's fair test and 90-day report card (Ben, 11 Nov 2026, replaces the older count-only rule)
+    LIVE_PROVEN = bool(((rj("state/forecasts.json", {}) or {}).get("score") or {}).get("proven_live"))
     # a fee of exactly 0 is a real setting, so only a missing value falls back to the default
     FEE_PCT = float(fee_cfg["pct"]) if fee_cfg.get("pct") is not None else FEE_PCT
     FEE_MIN = float(fee_cfg["min_usd"]) if fee_cfg.get("min_usd") is not None else FEE_MIN

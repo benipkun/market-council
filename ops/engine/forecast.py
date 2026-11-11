@@ -31,6 +31,8 @@ WIDE = 0.15             # sources further apart than this are reported as disagr
 CAP_LO, CAP_HI = 0.10, 0.90
 SIM_DAYS = 2520         # at most ten years of the share's own history feed the simulation
 MIN_DAYS = 400
+SHRINK = 50             # cases at which a band's correction is halfway to the full gap
+FAIR_N, FAIR_MONTHS, FAIR_WEEK = 100, 3, 1.0 / 3   # the fair test before 'proven live'
 ENOUGH = 30             # checked forecasts needed before the score is more than "too early to judge"
 NL = chr(10)
 
@@ -336,8 +338,10 @@ def summarise(P, O, PL, labels=None):
         k = int(m.sum())
         row = {"band": b, "n": k, "said": r4(float(P[m].mean()), 3) if k else None, "happened": r4(float(O[m].mean()), 3) if k else None, "few": k < MIN_CASES}
         out["bands"].append(row)
-        if k >= MIN_CASES:
-            out["adjust"]["%.1f" % b] = r4(float(O[m].mean() - P[m].mean()), 3)
+        if k:
+            # self-correction (Ben, 11 Nov 2026): move a band toward what actually happened, by k/(k+SHRINK) of the gap,
+            # so a small record corrects a little and a large one fully
+            out["adjust"]["%.1f" % b] = r4(float(O[m].mean() - P[m].mean()) * k / (k + SHRINK), 3)
     if labels is not None:
         kinds = {}
         for lab in sorted(set(labels)):
@@ -644,6 +648,7 @@ def run(shares, ctx, meta, targets, limits, load, save):
     done = [(e, scores[e["id"]]["o"]) for e in entries if e["id"] in scores]
     live = summarise([e["p"] for e, o in done], [o for e, o in done], [e.get("plain") if e.get("plain") is not None else 0.5 for e, o in done], [e["kind"] for e, o in done])
     adjust = live.get("adjust") or {}
+    live.update(fair_test(done, scores, made))
     # 2. today's forecasts
     plans = plans_from(dec, by)
     held = [p.get("ticker") for p in snap.get("positions") or [] if p.get("ticker")]
@@ -695,3 +700,40 @@ def run(shares, ctx, meta, targets, limits, load, save):
         "method": "Three sources, each shown: 10,000 simulated futures drawn from the share's own daily price changes in unbroken 21-day stretches (shifted to an assumed yearly return of the risk-free rate plus the share's beta times 5%); how often the same thing happened after similar past setups across every share in the history; and what option prices imply. The headline is their plain average. The range covers all sources and the uncertainty of the base rate, and is widened when the sources are more than 15 points apart. Targets, stops and falls are judged on daily closing prices.",
         "honesty": "Every figure is an estimate, not a promise. Similar past cases come from today's large companies, which leaves out firms that failed and so flatters the good outcomes. Fewer than 20 cases: too few to rely on."})
     return {"targets": len([1 for v in out_t.values() if not v.get("none")]), "logged": added, "checked": len(done)}
+
+
+def fair_test(done, scores, made):
+    """Ben, 11 Nov 2026: trusted only after a fair test. At least FAIR_N checks, due in FAIR_MONTHS different calendar months,
+    no single week holding more than FAIR_WEEK of them; and a monthly report card over the last 90 days that must beat both
+    'always 50%' and the plain base rate."""
+    import datetime as _d
+    days = [str(scores[e["id"]].get("on") or "")[:10] for e, o in done]
+    days = [d for d in days if len(d) == 10]
+    months = sorted(set(d[:7] for d in days))
+    weeks = {}
+    for d in days:
+        y, w, _ = _d.date.fromisoformat(d).isocalendar()
+        weeks["%d-W%02d" % (y, w)] = weeks.get("%d-W%02d" % (y, w), 0) + 1
+    top = max(weeks.values()) / float(len(days)) if days else 1.0
+    cut = (_d.date.fromisoformat(str(made)[:10]) - _d.timedelta(days=90)).isoformat()
+    recent = [(e, o) for e, o in done if str(scores[e["id"]].get("on") or "")[:10] >= cut]
+    card = {"window": "last 90 days", "checked": len(recent)}
+    if recent:
+        P = np.array([e["p"] for e, o in recent], dtype=float); O = np.array([o for e, o in recent], dtype=float)
+        PL = np.array([e.get("plain") if e.get("plain") is not None else 0.5 for e, o in recent], dtype=float)
+        card.update({"brier": r4(float(np.mean((P - O) ** 2))), "brier_fifty": r4(float(np.mean((0.5 - O) ** 2))), "brier_plain": r4(float(np.mean((PL - O) ** 2)))})
+        card["beats_both"] = bool(card["brier"] < card["brier_fifty"] and card["brier"] < card["brier_plain"])
+    fair = len(days) >= FAIR_N and len(months) >= FAIR_MONTHS and top <= FAIR_WEEK
+    proven = bool(fair and card.get("beats_both"))
+    why = []
+    if len(days) < FAIR_N:
+        why.append("%d of %d checks" % (len(days), FAIR_N))
+    if len(months) < FAIR_MONTHS:
+        why.append("checks in %d of %d calendar months" % (len(months), FAIR_MONTHS))
+    if top > FAIR_WEEK:
+        why.append("%.0f%% of checks in one week (at most %.0f%%)" % (100 * top, 100 * FAIR_WEEK))
+    if not card.get("beats_both"):
+        why.append("does not yet beat both 'always 50%' and the base rate over the last 90 days")
+    return {"fair_test": {"checks": len(days), "months": months, "top_week_share": r4(top, 3), "passed": fair, "rule": "At least %d checks, in at least %d calendar months, no week holding more than a third." % (FAIR_N, FAIR_MONTHS)},
+            "report_card": card, "proven_live": proven,
+            "proven_why": "Proven live: it passed the fair test and beats both yardsticks." if proven else "Unproven live: " + "; ".join(why) + "."}
