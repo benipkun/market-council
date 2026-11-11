@@ -355,7 +355,27 @@ def card(tk, meta, quant):
                         "politicians": {"status": "not available", "reason": "no free source of congressional trades answers from GitHub's servers"}}
     beta = a.get("beta_1y")
     rf = (quant.get("opt") or {}).get("rf") or 0.04
-    c["valuation"] = dcf(tk, nq("company/" + tk + "/financials?frequency=1"), price, shares, beta, rf, meta)
+    fin = nq("company/" + tk + "/financials?frequency=1")
+    if not ((fin or {}).get("incomeStatementTable") or {}).get("rows"):
+        # the earlier free source stopped answering GitHub's servers on 10 Nov 2026; Ben chose the US filings database
+        try:
+            import sec
+            fin = sec.financials(tk)
+            if fin:
+                c["sources"].append("SEC EDGAR companyfacts (10-K filings) for the statements")
+                if not shares:
+                    shares = sec.shares_out(tk)
+                if not price:
+                    import prices as PX
+                    price = PX.quote(tk)[0]
+        except Exception as e:
+            fin = None
+            c["sec_error"] = "%s: %s" % (type(e).__name__, str(e)[:100])
+    c["valuation"] = dcf(tk, fin, price, shares, beta, rf, meta)
+    if fin and fin.get("source") and c["valuation"].get("status") == "valued":
+        c["valuation"]["statements_source"] = fin["source"]
+        if str((fin.get("tags") or {}).get("Operating Income", "")).startswith("IncomeLoss"):
+            c["valuation"]["note"] = "Pre-tax income stands in for operating income: the filings report no operating income line, so this value is rougher than usual."
     return c
 
 

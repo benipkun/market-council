@@ -553,6 +553,10 @@ def main():
     level = min(5, max(1, level))
     lim = dict(LEVELS[level])
     lim["shorts"] = bool(prof.get("allow_shorts")) and level >= 4
+    # a personal loss-at-the-stop guide overrides the level's (Ben, 11 Nov 2026: "2-3%"), never above 3% of the portfolio
+    if prof.get("risk_per_trade"):
+        lim["risk_per_trade"] = min(0.03, max(0.0025, float(prof["risk_per_trade"])))
+        lim["risk_per_trade_note"] = "your own guide (set %s), capped at 3%%" % str(prof.get("risk_set_at") or "")[:10]
     hz = float(prof.get("horizon_years") or 5)
     lim["safe_floor"] = 0.40 if hz < 3 else (0.20 if hz < 7 else 0.05)
 

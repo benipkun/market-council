@@ -76,6 +76,7 @@ jobs:
           restore-keys: prices-
       - name: Run the engine
         env:
+          SEC_CONTACT: ${{ secrets.SEC_CONTACT }}
           TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
           NTFY_OUT: ${{ secrets.NTFY_OUT }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
