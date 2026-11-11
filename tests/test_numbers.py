@@ -1117,5 +1117,51 @@ class ApprovedCardWording(unittest.TestCase):
         self.assertIn("Placed it at your broker? Log the ", js)
 
 
+class BoardCycle6(unittest.TestCase):
+    """Board cycle 6: I33 (research source empty but reported ok), I34 (touch chance shown without its label),
+    I35 (actions.py needs proof.py wherever it is copied)."""
+
+    def test_research_empty_is_a_problem(self):
+        empty = {"as_of": "2026-11-11T01:28:57Z", "cards": [{"t": t, "valued": False, "rating": None, "target": None} for t in ("A", "B", "C", "D", "E")]}
+        self.assertIn("any of 5 companies", H.research_empty(empty))
+        one = {"cards": [dict(c) for c in empty["cards"]]}
+        one["cards"][2]["rating"] = "Buy"
+        self.assertIsNone(H.research_empty(one))
+        self.assertIsNone(H.research_empty({"cards": empty["cards"][:3]}))   # too few cards to judge
+        self.assertIsNone(H.research_empty(None))
+        now = datetime.datetime(2026, 11, 11, 6, 0, tzinfo=datetime.timezone.utc)
+        good = dict((j["id"], [{"status": "completed", "conclusion": "success", "created_at": "2026-11-11T05:30:00Z"}]) for j in H.JOBS)
+        dates = dict((d["id"], "2026-11-11T05:00:00Z") for d in H.DATA)
+        out, send, over = H.assess(good, dates, {}, None, {}, now, research=empty)
+        self.assertEqual([p["key"] for p in out["problems"]], ["data:research:empty"])
+        self.assertEqual(len(send), 1)
+
+    def test_hold_line_labels_the_touch_chance(self):
+        ctx = {"keeps": {"ABC": {"target": 50.0, "by": "2028-01-01", "chance_touch": 0.6, "chance_touch_no_drift": 0.55, "chance_above_on_date": 0.3}},
+               "hold": {"ABC": {"qty": 10, "value": 400.0}}, "pf": {}, "nav": 1000.0, "holds": {}}
+        line = A.hold_keep("ABC", ctx)["line"]
+        self.assertIn("a random-walk model gives 60% to touch it first", line)
+        self.assertIn("55% with no assumed return", line)
+        self.assertIn("30% to be above it on the date", line)
+        self.assertIn("not a scored forecast", line)
+
+    def test_actions_local_imports_travel_with_it(self):
+        import re
+        eng = os.path.join(HERE, "..", "ops", "engine")
+        with open(os.path.join(eng, "actions.py"), encoding="utf-8") as f:
+            src = f.read()
+        local = sorted(set(m for m in re.findall(r"^\s*import (\w+)", src, re.M) if os.path.exists(os.path.join(eng, m + ".py"))))
+        self.assertIn("proof", local)
+        wf = os.path.join(HERE, "..", ".github", "workflows")
+        for name in sorted(os.listdir(wf)):
+            with open(os.path.join(wf, name), encoding="utf-8") as f:
+                for line in f:
+                    copies = "cp " in line and "_code/ops/engine/actions.py" in line
+                    saves = "git add" in line and "ops/engine/actions.py" in line
+                    if copies or saves:
+                        for m in local:
+                            self.assertIn("ops/engine/%s.py" % m, line, "%s copies or saves actions.py without %s.py" % (name, m))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
