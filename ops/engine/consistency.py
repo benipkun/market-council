@@ -17,6 +17,9 @@ import sys
 ROOT = os.environ.get("MC_ROOT", ".")
 LABELS = ("WATCHING", "PAPER ONLY", "PAPER IDEA", "REJECTED TODAY", "not a buy now", "not an action", "Not a buy now", "Not an action today", "No orders", "Past cases")
 ACTION = re.compile(r"\b(BUY|SELL|SWAP|Buy|Sell)\b(?:\s+[\d.,$]+(?:\s+of)?)?\s+([A-Z]{1,5})\b")
+# Ben's standing decision (15 Nov 2026): UBER is his conviction holding. A suggestion to sell or trim it fails the run.
+CONVICTION_WORDS = re.compile(r"\b(sell|selling|trim|trimming|reduce|reducing|cut|cutting|take profits? on|exit|swap)\b[^.;]{0,40}\b(%s)\b|\b(%s)\b[^.;]{0,25}\b(should be sold|to sell|trim it|sell it|reduce it)\b")
+CONVICTION_OK = re.compile(r"\b(not|never|no|kept by|keep|kept|standing decision|conviction)\b", re.I)
 EXIT_WORDS = re.compile(r"\b(sell with a limit order|place a stop|buy at)\b", re.I)
 
 
@@ -35,6 +38,50 @@ def scan(text, allowed, where, out):
         for m in ACTION.finditer(line):
             if m.group(2) not in allowed:
                 out.append("%s says '%s' for %s, which is not in today's answer" % (where, m.group(0), m.group(2)))
+
+
+def conviction_scan(text, tickers, where, out):
+    """Board of 15 Nov 2026: any line that suggests selling or trimming a conviction holding is a contradiction."""
+    if not tickers:
+        return
+    t = "|".join(sorted(tickers))
+    rx = re.compile(CONVICTION_WORDS.pattern % (t, t), re.I)
+    for line in re.split(r"[\n\r]+|(?<=[.!?])\s+", str(text or "")):
+        if rx.search(line) and not CONVICTION_OK.search(line):
+            out.append("%s suggests selling or trimming a conviction holding: '%s'" % (where, line.strip()[:120]))
+
+
+def check_conviction(root=None):
+    global ROOT
+    if root:
+        ROOT = root
+    v = []
+    keeps = set(((rj("state/decisions.json", {}) or {}).get("keeps") or {}).keys())
+    acts = rj("state/actions.json", {}) or {}
+    for a in acts.get("actions") or []:
+        if a.get("type") in ("SELL", "SWAP") and (a.get("ticker") in keeps or (a.get("sell") or {}).get("ticker") in keeps):
+            v.append("the action list sells %s, a conviction holding" % (a.get("ticker") or (a.get("sell") or {}).get("ticker")))
+        conviction_scan(a.get("line"), keeps, "the action list", v)
+    conviction_scan((acts.get("final") or {}).get("text"), keeps, "the answer", v)
+    for c in (rj("state/decisions.json", {}) or {}).get("cards") or []:
+        if c.get("status") == "open" and not c.get("greyed"):
+            conviction_scan(" ".join(str(c.get(k) or "") for k in ("title", "why", "line")), keeps, "card %s" % c.get("id"), v)
+    try:
+        conviction_scan(re.sub(r"<[^>]+>", "\n", open(os.path.join(ROOT, "brief", "index.html"), encoding="utf-8").read()), keeps, "the brief", v)
+    except Exception:
+        pass
+    for p in glob.glob(os.path.join(ROOT, "outbox", "queue", datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d") + "*.json")):
+        m = rj(os.path.relpath(p, ROOT), {}) or {}
+        conviction_scan(m.get("message"), keeps, "the phone message '%s'" % m.get("title"), v)
+    res = rj("state/results.json", None)
+    if res:
+        mixed = [x.get("ticker") for part in ("system", "own") for x in (res.get(part) or {}).get("positions") or [] if x.get("ticker") in keeps]
+        if mixed:
+            v.append("the results mix a conviction holding into the system or own picks: %s" % ", ".join(mixed))
+    for i in (rj("state/track.json", {}) or {}).get("ideas") or []:
+        if i.get("t") in keeps and str(i.get("day")) >= "2026-11-15":
+            v.append("the track record logged an idea on %s, a conviction holding, on %s" % (i.get("t"), i.get("day")))
+    return sorted(set(v))
 
 
 def check(root=None):
@@ -138,7 +185,7 @@ def fail(v):
 
 
 def main():
-    v = check()
+    v = check() + check_conviction()
     state = {"as_of": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": not v, "problems": v}
     with open(os.path.join(ROOT, "state", "consistency.json"), "w", encoding="utf-8") as f:
         json.dump(state, f, indent=1)

@@ -1623,6 +1623,21 @@ def main():
         print("memos: %d due, %s of %s memos scored" % (mr["due"], mr["scored"], mr["memos"]))
     except Exception as e:
         print("memos: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # results in parts (Ben's standing decision, 15 Nov 2026): system picks, his own picks, the conviction holding, the total
+    try:
+        import results
+        rs = results.run(closes=E.read_cache)
+        print("results: " + rs["system_line"] + " " + rs["total_line"])
+        hr = datetime.datetime.now(datetime.timezone.utc)
+        day = hr.strftime("%Y%m%d")
+        os.makedirs(os.path.join("outbox", "queue"), exist_ok=True)
+        sent = [f for f in os.listdir(os.path.join("outbox", "queue")) if f.startswith(day) and f.endswith("-results.json")]
+        if hr.hour >= 21 and hr.weekday() < 5 and not sent:
+            with open(os.path.join("outbox", "queue", "%s-results.json" % hr.strftime("%Y%m%dT%H%M%SZ")), "w", encoding="utf-8") as f:
+                json.dump({"title": "Market Council: results today", "message": rs["system_line"] + " " + rs["conviction_line"] + " " + rs["total_line"],
+                           "click": "https://benipkun.github.io/market-council/#today", "tags": ["bar_chart"]}, f, indent=1)
+    except Exception as e:
+        print("results: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     # the running cost for SYSTEM (10 Nov 2026): routine runs from today's commits, paid API calls from the spend file
     try:
         import costs

@@ -147,8 +147,13 @@ def holding_map(snap):
     return out
 
 
+CONVICTION = set()      # Ben's conviction holdings (his keeps), filled in build_ctx; their concentration is shown once on PORTFOLIO
+
+
 def largest_after(hold, nav, add_t=None, add_usd=0.0, drop_t=None, extra_cash=0.0):
-    vals = dict((t, h["value"]) for t, h in hold.items() if t != drop_t)
+    # the largest holding other than a conviction holding (Ben, 15 Nov 2026: UBER's concentration is a fact on PORTFOLIO,
+    # not repeated in every answer)
+    vals = dict((t, h["value"]) for t, h in hold.items() if t != drop_t and t not in CONVICTION)
     if add_t:
         vals[add_t] = vals.get(add_t, 0.0) + add_usd
     tot = nav + extra_cash
@@ -495,6 +500,8 @@ def build_ctx(dec=None):
             sector[t] = a.get("sector")
     sector = dict((t, fix_sector(t, s)) for t, s in sector.items())
     back = rj("state/backcheck.json", {}) or {}
+    CONVICTION.clear()
+    CONVICTION.update((dec.get("keeps") or {}).keys())
     split = PR.split(snap, dec.get("keeps") or {}, (lim or {}).get("side_cap"))
     return {"dec": dec, "cards": dec.get("cards") or [], "fct": (rj("state/forecasts.json", {}) or {}).get("targets") or {}, "track": rj("state/track.json", {}) or {},
             "hold": holding_map(snap), "nav": nav, "cash": cash, "limits": lim, "keeps": dec.get("keeps") or {}, "holds": dec.get("holds") or {},

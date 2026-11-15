@@ -797,6 +797,40 @@ class Prices(unittest.TestCase):
         self.assertFalse(PR.market_open(datetime.datetime(2026, 11, 7, 15, 0, tzinfo=datetime.timezone.utc)))   # a Saturday
 
 
+class Conviction(unittest.TestCase):
+    """Ben's standing decision of 15 Nov 2026: UBER is his conviction holding; nothing may suggest selling or trimming it,
+    and its result is never mixed into the system picks."""
+
+    def test_any_sell_or_trim_suggestion_fails(self):
+        for bad in ("Trim UBER to 30% of the portfolio.", "Consider selling UBER now.", "SWAP UBER for MRK.", "Reduce UBER to the limit.", "UBER should be sold."):
+            v = []
+            CC.conviction_scan(bad, {"UBER"}, "x", v)
+            self.assertTrue(v, bad)
+
+    def test_the_decision_itself_passes(self):
+        for ok in ("UBER is your conviction holding, kept by your choice.", "Never sell or trim UBER.", "UBER: target $80.00 by 2027-10-05.", "Sell 11.55 FISN, buy 0.54 DVN."):
+            v = []
+            CC.conviction_scan(ok, {"UBER"}, "x", v)
+            self.assertEqual(v, [], ok)
+
+    def test_results_never_mix_uber_into_the_system_picks(self):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "state"))
+        json.dump({"keeps": {"UBER": {"target": 80.0}}, "cards": []}, open(os.path.join(d, "state", "decisions.json"), "w"))
+        json.dump({"system": {"positions": [{"ticker": "UBER"}]}, "own": {"positions": []}}, open(os.path.join(d, "state", "results.json"), "w"))
+        self.assertTrue(any("mix" in x for x in CC.check_conviction(d)))
+        json.dump({"system": {"positions": [{"ticker": "MO"}]}, "own": {"positions": []}, "conviction": {"positions": [{"ticker": "UBER"}]}}, open(os.path.join(d, "state", "results.json"), "w"))
+        self.assertEqual(CC.check_conviction(d), [])
+
+    def test_the_action_list_never_names_uber_as_the_largest_holding(self):
+        A.CONVICTION.clear(); A.CONVICTION.add("UBER")
+        try:
+            r = A.largest_after({"UBER": {"value": 640.0}, "MO": {"value": 157.0}}, 1500.0)
+            self.assertNotEqual((r or {}).get("t"), "UBER")
+        finally:
+            A.CONVICTION.clear()
+
+
 class OneAnswer(unittest.TestCase):
     def test_a_withdrawn_idea_is_announced(self):
         # board issue I23: an action that drops off the list is said plainly on TODAY, with no buy or sell wording

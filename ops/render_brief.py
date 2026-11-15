@@ -303,6 +303,10 @@ def main():
         sections.append(("changed", "What changed", rows + '<p class="note">Day moves are closing prices from the engine; the value line comes from your books.</p>', ""))
 
     # What to do now: the numbered action list (ops/engine/actions.py), the same one the app shows on Today
+    res = obj(load("state/results.json"))
+    if res.get("system_line"):
+        # results in parts (Ben's standing decision, 15 Nov 2026)
+        sections.append(("results", "Results in parts", "".join("<p>{}</p>".format(e(res.get(k))) for k in ("system_line", "conviction_line", "total_line") if res.get(k)), ""))
     acts = obj(load("state/actions.json"))
     fin = obj(acts.get("final"))
     if fin.get("text"):
