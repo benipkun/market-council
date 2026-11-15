@@ -101,7 +101,7 @@ def evidence(sig, back, track):
     elif p.get("vs_spy_now") is not None and p["measured_now"]:
         pp += "; so far %s against the S&P 500 fund after fees (early read, %d ideas)" % (_pct(p["vs_spy_now"]), p["measured_now"])
     pp += "."
-    status = "PROVEN: may raise real-money cards." if ok else "PAPER ONLY until %d paper ideas reach three months and beat the S&P 500 fund after fees." % PAPER_MIN
+    status = "PROVEN on paper." if ok else "UNPROVEN: needs %d paper ideas at three months that beat the S&P 500 fund after fees." % PAPER_MIN
     return {"signal": sig, "name": NAMES.get(sig, sig), "backtest": b, "paper": p, "proven": ok, "status": status,
             "text": "%s. %s %s %s" % (NAMES.get(sig, sig), bt, pp, status), "progress": "%d of %d" % (min(p["at_mark"], PAPER_MIN), PAPER_MIN)}
 

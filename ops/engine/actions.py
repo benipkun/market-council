@@ -189,7 +189,7 @@ def candidates(ctx):
         held_back, flags, disagree = [], [], []
         if fc and fc.get("unproven_live"):
             flags.append("forecaster unproven live")
-        if c.get("greyed"):
+        if c.get("greyed") and not str(c.get("grey_reason") or "").startswith("PAPER ONLY"):   # the paper gate ended 15 Nov 2026
             held_back.append(c.get("grey_reason") or "held back by the desk")
         pc = c.get("price_check") or {}
         if pc.get("ok") is False:
@@ -206,7 +206,9 @@ def candidates(ctx):
         # and beat the S&P 500 fund after fees; until then every idea it raises is PAPER ONLY
         pf_ev = PR.evidence(PR.signal_of(c), ctx.get("back"), ctx["track"])
         if pf_ev and not pf_ev["proven"] and not ctx.get("assume_proven"):     # assume_proven: tests of the order numbers only
-            held_back.insert(0, "PAPER ONLY: %s has %s paper ideas at the three-month mark" % (pf_ev["name"], pf_ev["progress"]))
+            # Ben, 15 Nov 2026: unproven signals may raise real actions again, labelled UNPROVEN with their numbers; the paper
+            # record keeps running (it was a hard PAPER ONLY gate from 10 to 15 Nov)
+            flags.append("unproven signal")
         ev = evidence(c, ctx["track"], fc)
         if ev["label"] == "unproven":
             flags.append("unproven")
@@ -754,7 +756,7 @@ def final_answer(acts, cands=None):
         head = "DO THIS 1 THING" if len(real) == 1 else "DO THESE %d THINGS" % len(real)
         lines = []
         for i, a in enumerate(real, 1):
-            fl = [f for f in a.get("flags") or [] if f in ("unproven", "forecaster unproven live", "trails the index fund", "fraction of a share")]
+            fl = [f for f in a.get("flags") or [] if f in ("unproven signal", "unproven", "forecaster unproven live", "trails the index fund", "fraction of a share")]
             lines.append("%d. %s%s" % (i, short_line(a), (" [%s]" % ", ".join(fl)) if fl else ""))
         reason = None
     else:
@@ -787,6 +789,12 @@ def why_nothing(cands, ctx):
         return "Data is stale (%s), so every buy waits until it updates." % ", ".join(ctx["stale"])
     if not cands:
         return "There is no open idea card, so nothing beats what you hold or the index fund after fees."
+    sp = ctx.get("split") or {}
+    if sp.get("over"):
+        # core first (Ben, 10 Nov 2026, kept on 15 Nov): one sentence, the real reason
+        cash = float(ctx.get("free_cash") or 0)
+        return "Stock ideas already use %.0f%% of the portfolio against your %.0f%% cap, so new money goes to the S&P 500 fund (core first)%s." % (
+            100 * sp.get("side_share", 0), 100 * sp.get("side_cap", PR.SIDE_CAP), (", and $%.0f of free cash is under the $%d minimum order, so it waits" % (cash, MIN_ORDER)) if cash < MIN_ORDER else "")
     if any(str((x.get("held_back") or [""])[0]).startswith("PAPER ONLY") for x in cands):
         # paper first and core first (10 Nov 2026): one sentence, the real reason
         cash = float(ctx.get("free_cash") or 0)
@@ -1058,7 +1066,7 @@ def run(now=None, dec=None, spy_price=None):
     out = {"final": fin, "as_of": now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "books_as_of": ctx["books_as_of"], "desk_as_of": ctx["desk_as_of"],
            "actions": acts, "swap_options": swap_options(cands, acts, ctx), "sell_answers": sells, "stale": ctx["stale"],
            "proof": {"signals": PR.table(ctx.get("back"), ctx["track"]), "split": ctx.get("split"), "paper_min": PR.PAPER_MIN, "mark": "three months",
-                     "rule": "Paper first: a signal raises cards for real money only after %d of its paper ideas have reached the three-month mark and, on average, beat the S&P 500 fund after fees. Core first: money no proven idea uses goes to the S&P 500 fund; stock ideas are capped at %.0f%% of the portfolio; UBER is a declared conviction bet with its own target and review date." % (PR.PAPER_MIN, 100 * (ctx.get("split") or {}).get("side_cap", PR.SIDE_CAP))},
+                     "rule": "Every signal is tested on paper: it counts as proven once %d of its paper ideas have reached the three-month mark and, on average, beat the S&P 500 fund after fees. Until then its ideas can still be actions, labelled UNPROVEN SIGNAL with these numbers (Ben, 15 Nov 2026). Core first: money no proven idea uses goes to the S&P 500 fund; stock ideas are capped at %.0f%% of the portfolio; UBER is a declared conviction bet with its own target and review date." % (PR.PAPER_MIN, 100 * (ctx.get("split") or {}).get("side_cap", PR.SIDE_CAP))},
            "self_check": {"rule": "every line that calls a share yours, sells it or holds it is read back against your books; a line that fails is not shown",
                           "removed": ctx.get("self_check") or []},
            "monthly_answer": plan_amount(ctx["monthly_usd"], ctx) if ctx["monthly_usd"] else None,

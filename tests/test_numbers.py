@@ -821,17 +821,20 @@ class OneAnswer(unittest.TestCase):
         finally:
             A.ROOT = old
 
-    def test_paper_first_then_core_first(self):
-        # a signal without 20 three-month paper ideas raises no real-money card; the free cash goes to the S&P 500 fund
+    def test_an_unproven_signal_can_act_but_says_so(self):
+        # Ben, 15 Nov 2026: an idea from a signal without 20 three-month paper ideas can be an action, labelled UNPROVEN SIGNAL
         c = self.ctx(assume_proven=False)
         v = A.verdicts_from(c)["SCORE:NEW"]
-        self.assertFalse(v["buy"])
-        self.assertTrue(v["label"].startswith("PAPER ONLY: being tested"), v["label"])
-        self.assertIn("0 of 20", v["label"])
+        self.assertTrue(v["buy"])
+        self.assertIn("0 of 20", v["proof"])
         f = A.final_answer(A.today(c)[0])
-        self.assertEqual(f["headline"], "DO THIS 1 THING")
-        self.assertIn("SPY, the S&P 500 fund (core first)", f["lines"][0])
+        self.assertIn("unproven signal", f["lines"][0])
         self.assertNotIn("buy now", f["text"].lower())
+
+    def test_core_first_when_no_idea_qualifies(self):
+        c = self.ctx(assume_proven=False, split={"over": True, "text": "Stock ideas use 53% of the portfolio against a cap of 25%."})
+        f = A.final_answer(A.today(c)[0])
+        self.assertIn("SPY, the S&P 500 fund (core first)", f["lines"][0])
 
     def test_the_side_portion_cap_holds_back_stock_ideas(self):
         c = self.ctx(split={"over": True, "text": "Stock ideas use 53% of the portfolio against a cap of 25%."})
