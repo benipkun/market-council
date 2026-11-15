@@ -1629,9 +1629,9 @@ def main():
         rs = results.run(closes=E.read_cache)
         print("results: " + rs["system_line"] + " " + rs["total_line"])
         hr = datetime.datetime.now(datetime.timezone.utc)
-        day = hr.strftime("%Y%m%d")
+        ymd = hr.strftime("%Y%m%d")           # not "day": that name is the date function used earlier in main()
         os.makedirs(os.path.join("outbox", "queue"), exist_ok=True)
-        sent = [f for f in os.listdir(os.path.join("outbox", "queue")) if f.startswith(day) and f.endswith("-results.json")]
+        sent = [f for f in os.listdir(os.path.join("outbox", "queue")) if f.startswith(ymd) and f.endswith("-results.json")]
         if hr.hour >= 21 and hr.weekday() < 5 and not sent:
             with open(os.path.join("outbox", "queue", "%s-results.json" % hr.strftime("%Y%m%dT%H%M%SZ")), "w", encoding="utf-8") as f:
                 json.dump({"title": "Market Council: results today", "message": rs["system_line"] + " " + rs["conviction_line"] + " " + rs["total_line"],
