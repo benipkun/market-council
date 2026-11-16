@@ -503,13 +503,24 @@ def build_ctx(dec=None):
     CONVICTION.clear()
     CONVICTION.update((dec.get("keeps") or {}).keys())
     split = PR.split(snap, dec.get("keeps") or {}, (lim or {}).get("side_cap"))
+    # Ben's target split (16 Nov 2026) replaces the 25% cap once he has saved one: STOCKS may grow up to target + band,
+    # and new money goes to the part furthest below target
+    alloc = rj("state/allocation.json", {}) or {}
+    if alloc.get("target") and alloc.get("actual"):
+        tg, ac = alloc["target"], alloc["actual"]
+        tot = float(ac.get("invested") or 0) + float(ac.get("cash") or 0)
+        cap = (tg["stocks"] + float(tg.get("band") or 5)) / 100.0
+        split = dict(split, side_cap=tg["stocks"] / 100.0, over=ac["pct"]["stocks"] > tg["stocks"] + float(tg.get("band") or 5),
+                     side_share=ac["pct"]["stocks"] / 100.0, side_room_usd=round(max(0.0, cap * tot - float(ac["usd"]["stocks"])), 2), target=tg,
+                     text="STOCKS are %.0f%% of the invested money against your %d%% target (band +-%d)." % (ac["pct"]["stocks"], tg["stocks"], int(tg.get("band") or 5)))
     return {"dec": dec, "cards": dec.get("cards") or [], "fct": (rj("state/forecasts.json", {}) or {}).get("targets") or {}, "track": rj("state/track.json", {}) or {},
             "hold": holding_map(snap), "nav": nav, "cash": cash, "limits": lim, "keeps": dec.get("keeps") or {}, "holds": dec.get("holds") or {},
             "pf": dec.get("portfolio_first") or {}, "fx": fx, "stale": stale, "free_cash": max(0.0, cash - float(lim.get("min_cash") or 0.03) * nav),
             "monthly_huf": huf, "monthly_usd": (huf / fx) if huf and fx else None, "spy": dec.get("spy_price"),
             "today": datetime.datetime.now(datetime.timezone.utc).date(),
             "index_mu": float(((rj("state/quant.json", {}) or {}).get("opt") or {}).get("rf") or 0.04) + 0.05,
-            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector, "back": back, "split": split, "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}),
+            "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector, "back": back, "split": split, "alloc": alloc,
+            "fund_px": dict((t, (((rj("state/quant.json", {}) or {}).get("assets") or {}).get(t) or {}).get("last")) for t in ("IEF", "SPY")), "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}),
             "held_sectors": sorted(set(sector.get(p.get("ticker")) for p in snap.get("positions") or [] if sector.get(p.get("ticker"))))}
 
 
@@ -543,7 +554,11 @@ def number(acts):
 
 
 def core_buy(usd, ctx):
-    # core first (Ben, 10 Nov 2026): money no proven stock idea uses goes to the S&P 500 index fund
+    # core first (Ben, 10 Nov 2026): money no stock idea uses goes to the S&P 500 index fund; with a target split
+    # (16 Nov 2026) it goes to the part furthest below target: IEF for BONDS, the S&P 500 fund for ETFs
+    step = next((s for s in ((ctx.get("alloc") or {}).get("plan") or {}).get("steps") or [] if s.get("type") == "BUY" and s.get("ticker")), None)
+    if step and step["ticker"] != "SPY" and (ctx.get("fund_px") or {}).get(step["ticker"]):
+        return fund_buy(min(usd, step["usd"]), ctx, step["ticker"], float(ctx["fund_px"][step["ticker"]]), step["part"])
     px = float(ctx["spy"])
     sh = shares_for(usd - fee(usd), px)
     cost = round(sh * px, 2)
@@ -555,6 +570,28 @@ def core_buy(usd, ctx):
             "expected_usd": r2(cost * ctx.get("index_mu", 0.0861) - 2 * fee(cost)), "expected_note": "over a year at the engine's index assumption (%.1f%% a year), an estimate" % (100 * ctx.get("index_mu", 0.0861)),
             "line": "BUY %s SPY (S&P 500 index fund, the core) at limit $%.2f = $%s%s, fees $%.2f: core first, because no stock idea has proven itself on paper yet.%s" % (
                 fmt_sh(sh), px, money(cost), (" (%s HUF)" % "{:,}".format(round(cost * ctx["fx"]))) if ctx["fx"] else "", fee(cost), "" if float(sh).is_integer() else " " + FRACTION)}
+
+
+def fund_buy(usd, ctx, t, px, part):
+    sh = shares_for(usd - fee(usd), px)
+    cost = round(sh * px, 2)
+    if cost < MIN_ORDER:
+        return None
+    return {"type": "BUY", "ticker": t, "core": True, "key": "ALLOC:" + t, "shares": sh, "limit": round(px, 2), "usd": cost,
+            "huf": round(cost * ctx["fx"]) if ctx["fx"] else None, "fees": fee(cost), "pays_with": "free cash", "flags": ["fund: no edge claimed"],
+            "line": "BUY %s %s (%s, the part furthest below your target split) at limit $%.2f = $%s, fees $%.2f.%s" % (
+                fmt_sh(sh), t, "a US Treasury bond fund" if part == "bonds" else "a fund", px, money(cost), fee(cost), "" if float(sh).is_integer() else " " + FRACTION),
+            "part": part}
+
+
+def alloc_sells(ctx):
+    # sales toward the target split, only when Ben allowed them in the target; never a conviction holding
+    out = []
+    for s in ((ctx.get("alloc") or {}).get("plan") or {}).get("steps") or []:
+        if s.get("type") == "SELL" and s.get("ticker") and s["ticker"] not in ctx["keeps"] and s["ticker"] in ctx["hold"]:
+            out.append({"type": "SELL", "ticker": s["ticker"], "key": "ALLOC:SELL:" + s["ticker"], "usd": s["usd"], "fees": s["fees"],
+                        "line": s["line"] + " Toward your target split.", "head": "Sell $%.2f of %s toward your target split" % (s["usd"], s["ticker"])})
+    return out
 
 
 def today(ctx):
@@ -605,6 +642,7 @@ def today(ctx):
                  "head": "Sell %s %s (below your maximum-loss line)" % (fmt_sh(sn["shares"]), t)}
             a.update(dict((k, v) for k, v in sn.items() if k not in a))
             acts.append(a)
+    acts += alloc_sells(ctx)
     if not [a for a in acts if a["type"] in ("BUY", "SWAP")] and ctx.get("spy") and cash >= MIN_ORDER and not ctx["stale"]:
         a = core_buy(cash, ctx)
         if a:
@@ -733,6 +771,9 @@ def short_line(a):
     try:
         if a["type"] == "SELL":
             return a["line"]
+        if a.get("core") and a.get("ticker") != "SPY":
+            return "BUY %s %s (%s, the part furthest below your target split). Exit: none planned, held for the long term. Size $%.2f (%s HUF). Entry: limit $%.2f, from free cash." % (
+                _sh(a["shares"]), a["ticker"], "BONDS" if a.get("part") == "bonds" else "ETFs", a["usd"], "{:,}".format(int(a.get("huf") or 0)), a["limit"])
         if a.get("core"):
             return "BUY %s SPY, the S&P 500 fund (core first). Exit: none planned, the core is held for the long term. Size $%.2f (%s HUF). Entry: limit $%.2f, from free cash." % (
                 _sh(a["shares"]), a["usd"], "{:,}".format(int(a.get("huf") or 0)), a["limit"])

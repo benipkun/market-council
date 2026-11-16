@@ -797,6 +797,53 @@ class Prices(unittest.TestCase):
         self.assertFalse(PR.market_open(datetime.datetime(2026, 11, 7, 15, 0, tzinfo=datetime.timezone.utc)))   # a Saturday
 
 
+class TargetSplit(unittest.TestCase):
+    """Ben's target split (16 Nov 2026): parts add to 100, UBER is never sold to reach it, and a drift alert is sent."""
+
+    def act(self):
+        pos = [{"ticker": "UBER", "part": "stocks", "value": 640.0, "cost": 700.0}, {"ticker": "MO", "part": "stocks", "value": 157.0, "cost": 155.0},
+               {"ticker": "TRGP", "part": "stocks", "value": 130.0, "cost": 133.0}]
+        return {"invested": 927.0, "cash": 300.0, "usd": {"stocks": 927.0, "bonds": 0.0, "etfs": 0.0}, "pct": {"stocks": 100.0, "bonds": 0.0, "etfs": 0.0}, "positions": pos}
+
+    def test_plan_never_sells_uber_and_new_money_goes_first(self):
+        import allocation as AL
+        p = AL.plan({"stocks": 40, "bonds": 10, "etfs": 50, "band": 5, "allow_sales": True}, self.act(), {"UBER"})
+        self.assertFalse(any(s.get("ticker") == "UBER" for s in p["steps"]))
+        self.assertEqual(p["steps"][0]["type"], "BUY")                  # new money first
+        self.assertTrue(p["facts"] and "not sold" in p["facts"][0])     # UBER alone above the STOCKS target: a fact
+        self.assertFalse(any(s["type"] == "SELL" and s["part"] == "stocks" for s in p["steps"]))   # closed with new money only
+
+    def test_sales_only_when_allowed(self):
+        import allocation as AL
+        act = self.act()
+        act["positions"][0]["value"] = 100.0
+        p = AL.plan({"stocks": 40, "bonds": 10, "etfs": 50, "band": 5, "allow_sales": False}, act, {"UBER"})
+        self.assertFalse(any(s["type"] == "SELL" for s in p["steps"]))
+
+    def test_drift_alert_is_sent_once(self):
+        import allocation as AL
+        d = tempfile.mkdtemp()
+        for sub in ("state", "treasury", "answers"):
+            os.makedirs(os.path.join(d, sub))
+        json.dump({"cash": 300.0, "positions": [{"ticker": "UBER", "market_value": 640.0, "cost_basis": 700.0}, {"ticker": "SPY", "market_value": 100.0, "cost_basis": 95.0}]},
+                  open(os.path.join(d, "treasury", "snapshot.json"), "w"))
+        json.dump({"keeps": {"UBER": {}}}, open(os.path.join(d, "state", "decisions.json"), "w"))
+        json.dump({"kind": "allocation", "id": "alloc-1", "stocks": 30, "bonds": 20, "etfs": 50, "band": 5, "at": "2026-11-16T10:00:00Z"}, open(os.path.join(d, "answers", "alloc-1.json"), "w"))
+        old = AL.ROOT
+        try:
+            AL.ROOT = d
+            o = AL.run()
+            self.assertEqual(o["target"]["stocks"], 30)
+            self.assertEqual(len(o["history"]), 1)                       # the change is logged with its date
+            msgs = [f for f in os.listdir(os.path.join(d, "outbox", "queue")) if f.endswith("-drift.json")]
+            self.assertEqual(len(msgs), 1)
+            self.assertIn("outside the +-5 point band", json.load(open(os.path.join(d, "outbox", "queue", msgs[0])))["message"])
+            AL.run()                                                     # the same drift again: no second message
+            self.assertEqual(len([f for f in os.listdir(os.path.join(d, "outbox", "queue")) if f.endswith("-drift.json")]), 1)
+        finally:
+            AL.ROOT = old
+
+
 class Conviction(unittest.TestCase):
     """Ben's standing decision of 15 Nov 2026: UBER is his conviction holding; nothing may suggest selling or trimming it,
     and its result is never mixed into the system picks."""

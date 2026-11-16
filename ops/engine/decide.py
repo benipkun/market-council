@@ -1587,6 +1587,13 @@ def main():
         partners.run(now)
     except Exception as e:
         print("partners: the statement was not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    # the target split (16 Nov 2026): actual vs target, the outcome ranges, the plan and the drift alert
+    try:
+        import allocation
+        al = allocation.run(closes=E.read_cache)
+        print("allocation: actual %s, target %s" % (al["actual"]["pct"], (al.get("target") or {}) and "/".join(str(al["target"][k]) for k in allocation.PARTS) or "not set"))
+    except Exception as e:
+        print("allocation: not written (%s: %s)" % (type(e).__name__, str(e)[:120]))
     # the action list: the cards, the Forecaster, the fees and the cash turned into numbered BUY / SELL / SWAP / HOLD lines
     try:
         import actions
