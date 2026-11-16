@@ -1,3 +1,4 @@
+// screenshot tour (16 Nov 2026: includes the target split on PORTFOLIO)
 // Phone-size screenshots of every screen of the live app, for the review board (ops/BOARD.md in the records).
 // The app reads the private records with the records token, given to the page the same way the owner's phone
 // does (local storage). The pictures contain private figures: they are written to a folder that the job
