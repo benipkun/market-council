@@ -1,4 +1,4 @@
-// screenshot tour (16 Nov 2026: includes the target split on PORTFOLIO)
+// screenshot tour (16 Nov 2026: QUANT LAB, SETTINGS, and the four ways into the target split)
 // Phone-size screenshots of every screen of the live app, for the review board (ops/BOARD.md in the records).
 // The app reads the private records with the records token, given to the page the same way the owner's phone
 // does (local storage). The pictures contain private figures: they are written to a folder that the job
@@ -9,7 +9,7 @@ const path = require("path");
 
 const URL = "https://benipkun.github.io/market-council/";
 const TABS = ["today", "memos", "learn", "brief", "portfolio", "map", "risk", "plans", "log", "research", "watch", "quant", "council",
-  "strategy", "checks", "forecasts", "record", "partners", "system", "review", "guide", "board", "earnings", "behaviour"];
+  "strategy", "checks", "forecasts", "record", "partners", "system", "review", "guide", "board", "earnings", "behaviour", "qlab", "settings"];
 
 (async () => {
   const out = process.argv[2] || "/tmp/shots";
@@ -53,6 +53,28 @@ const TABS = ["today", "memos", "learn", "brief", "portfolio", "map", "risk", "p
       report.push({ tab, ok: false, ms: Date.now() - t0, why: String(e.message || e).slice(0, 160) });
     }
   }
+  // the four ways into the target split (Ben, 16 Nov 2026): before and after each tap, and whether the setting is then on screen
+  const ways = [];
+  const inView = () => page.evaluate(() => { const b = document.getElementById("p23-port"); if (!b) return false; const r = b.getBoundingClientRect(); return r.top < 844 && r.bottom > 0 && !b.closest("section.view").hidden; });
+  const steps = [
+    ["way1_portfolio_button", "map", async () => page.click(".p24top [data-p24=split]")],
+    ["way2_today_bar", "today", async () => { const el = await page.$("#v-today [data-p24=split]"); await el.scrollIntoViewIfNeeded(); await page.waitForTimeout(500); await page.screenshot({ path: path.join(out, "way2_today_bar_before.png") }); await el.click(); }],
+    ["way3_system_settings", "settings", async () => page.click("#v-settings [data-p24=split]")],
+    ["way4_ask_council", "today", async () => { await page.fill("#cmd-in", "change my split"); await page.screenshot({ path: path.join(out, "way4_ask_council_before.png") }); await page.press("#cmd-in", "Enter"); }]];
+  for (const [name, tab, act] of steps) {
+    try {
+      await page.goto(URL + "#" + tab, { waitUntil: "load", timeout: 60000 });
+      await page.waitForTimeout(7000);
+      if (name !== "way2_today_bar" && name !== "way4_ask_council") await page.screenshot({ path: path.join(out, name + "_before.png") });
+      await act();
+      await page.waitForTimeout(2500);
+      await page.screenshot({ path: path.join(out, name + "_after.png") });
+      ways.push({ name, ok: await inView(), hash: await page.evaluate(() => location.hash) });
+    } catch (e) {
+      ways.push({ name, ok: false, why: String(e.message || e).slice(0, 160) });
+    }
+  }
+  report.push({ tab: "ways_into_split", ways });
   fs.writeFileSync(path.join(out, "report.json"), JSON.stringify({ at: new Date().toISOString(), viewport: "390x844", shots: report, page_errors: errors }, null, 1));
   await browser.close();
   console.log("screens: " + n + " of " + TABS.length + ", page errors: " + errors.length);
