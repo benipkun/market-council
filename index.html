@@ -578,7 +578,7 @@ var SUBS={today:[["today","NOW"],["brief","BRIEF"]],portfolio:[["map","MAP"],["r
 var MONEY=["buy","sell","deposit","withdraw"];
 var FILES={digest:"digests/latest.json",treasury:"treasury/snapshot.json",ledger:"treasury/ledger.json",
 track:"state/track_record.json",history:"digests/history.json",paper:"state/paper.json",fx:"state/fx.json",
-alerts:"state/alerts.json",alstat:"state/alerts_status.json",plan:"state/plan.json",status:"state/status.json",theses:"state/theses.json",research:"research/index.json",messages:"state/messages.json"};
+alerts:"state/alerts.json",alstat:"state/alerts_status.json",plan:"state/plan.json",status:"state/status.json",theses:"state/theses.json",research:"research/index.json",messages:"state/messages.json",changes:"state/changes.json"};
 var S={};
 var DASH=String.fromCharCode(8212),MINUS=String.fromCharCode(8722),MID=String.fromCharCode(183),
 ELL=String.fromCharCode(8230),ARROW=String.fromCharCode(8594),NL=String.fromCharCode(10),
@@ -694,13 +694,17 @@ if(!d){sub.textContent=offline?"Offline "+DASH+" no saved data yet":"Loading"+EL
 b.innerHTML=offline?'<div class="msg err"><b>Can&#39;t reach the data.</b> Check your connection and tap refresh.</div>':"";return;}
 sub.textContent="Pipeline ran "+ago(d.as_of)+(offline?" "+MID+" offline":"");
 var ageMin=(Date.now()-new Date(d.as_of).getTime())/60000;
+/* 16 Nov 2026: the pipeline skips its cycle when the engine's changes check saw nothing new (cost rule); a fresh
+   "nothing changed" counts as the pipeline being up to date, as in the health check */
+var ch=S.changes,lim=170;if(ch&&ch.as_of&&!ch.changed&&ch.as_of>d.as_of){ageMin=Math.min(ageMin,(Date.now()-new Date(ch.as_of).getTime())/60000);lim=300;}
+/* the changes check is rewritten every 3 hours when nothing moves, and the pipeline's gate accepts it for 4: same 5-hour limit as the health check */
 var u=new Date(), dow=u.getUTCDay(), h=u.getUTCHours();
 var runHours=dow>=1&&dow<=5&&h>=7&&h<=23;
 if(offline){
 b.innerHTML='<div class="msg warn"><b>Offline.</b> Showing what was last loaded ('+esc(ago(d.as_of))+').</div>';
-}else if(runHours&&ageMin>170){
+}else if(runHours&&ageMin>lim){
 b.innerHTML='<div class="msg warn"><b>The pipeline hasn&#39;t reported for '+Math.round(ageMin/60)+
-'h.</b> On weekdays it reports every one to two hours between 06:00 and 23:00 UTC. It may have missed a run.</div>';
+'h.</b> On weekdays it reports every one to two hours between 06:00 and 23:00 UTC, and skips a cycle when prices have not moved. It may have missed a run.</div>';
 }else b.innerHTML="";
 var di=(S.status&&S.status.data_issues)||[];
 if(di.length)b.innerHTML+='<div class="msg warn" style="margin-top:6px"><b>Data sources down:</b> '+esc(di.map(function(x){return String(x).split(":")[0];}).join(", "))+'. Last good data is shown. Details under SYSTEM.</div>';

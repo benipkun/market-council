@@ -844,6 +844,26 @@ class TargetSplit(unittest.TestCase):
             AL.ROOT = old
 
 
+class SplitTickets(unittest.TestCase):
+    """Ben, 16 Nov 2026: the split plan becomes order tickets (shares, limit, fees) on the action list; UBER never sold."""
+
+    def test_plan_steps_become_tickets_and_uber_is_never_sold(self):
+        hold = {"MO": {"qty": 3.0, "price": 60.0, "cost": 200.0, "value": 180.0, "qty_known": True, "price_as_of": "x"},
+                "UBER": {"qty": 8.0, "price": 80.0, "cost": 700.0, "value": 640.0, "qty_known": True, "price_as_of": "x"}}
+        steps = [{"type": "SELL", "part": "stocks", "ticker": "UBER", "usd": 300.0, "fees": 1.0, "line": "x"},
+                 {"type": "SELL", "part": "stocks", "ticker": "MO", "usd": 120.0, "fees": 1.0, "line": "x"},
+                 {"type": "BUY", "part": "bonds", "ticker": "IEF", "usd": 250.0, "fees": 1.0, "line": "BUY $250 of IEF with new money"},
+                 {"type": "BUY", "part": "etfs", "ticker": "SPY", "usd": 118.0, "fees": 1.0, "line": "BUY $118 of SPY with the proceeds"}]
+        ctx = {"hold": hold, "keeps": {"UBER": {}}, "fx": 330.0, "spy": 600.0, "fund_px": {"IEF": 95.0, "SPY": None}, "alloc": {"plan": {"steps": steps}}}
+        tk, left = A.alloc_tickets(ctx, 300.0)
+        self.assertEqual([(a["type"], a["ticker"]) for a in tk], [("SELL", "MO"), ("BUY", "IEF"), ("BUY", "SPY")])
+        self.assertFalse(any(a["ticker"] == "UBER" for a in tk))
+        for a in tk:
+            self.assertTrue(a["shares"] > 0 and a["limit"] > 0 and a["fees"] >= 1.0, a)
+        self.assertEqual(tk[2]["pays_with"], "the sale proceeds above")
+        self.assertLess(left, 300.0 - 150)
+
+
 class Conviction(unittest.TestCase):
     """Ben's standing decision of 15 Nov 2026: UBER is his conviction holding; nothing may suggest selling or trimming it,
     and its result is never mixed into the system picks."""

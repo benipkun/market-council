@@ -4,7 +4,7 @@
   BONDS:  government and corporate bonds, and bond funds or bond ETFs.
   ETFs:   index and other non-bond funds (for example the S&P 500 index fund).
 
-Writes state/allocation.json: the definitions, presets, Ben's target and its dated history, the actual split in % and
+Writes state/allocation.json: the definitions, Ben's own target (free sliders, no presets: Ben, 16 Nov 2026) and its dated history, the actual split in % and
 money, each part's expected return and risk with their correlations (so the app can show the outcome range of ANY split
 before it is saved), the drift against the tolerance band, and the plan to reach the target (new money first; sales only
 if Ben allowed them; UBER is never sold or trimmed: standing decision of 15 Nov 2026).
@@ -23,8 +23,6 @@ PARTS = ("stocks", "bonds", "etfs")
 DEFS = {"stocks": "Single company shares, including UBER.",
         "bonds": "Government and corporate bonds, and bond funds or bond ETFs.",
         "etfs": "Index and other non-bond funds (for example the S&P 500 index fund)."}
-PRESETS = [{"name": "All stocks", "stocks": 100, "bonds": 0, "etfs": 0}, {"name": "Balanced", "stocks": 60, "bonds": 20, "etfs": 20},
-           {"name": "Index-led", "stocks": 20, "bonds": 30, "etfs": 50}, {"name": "Growth core", "stocks": 40, "bonds": 10, "etfs": 50}]
 BOND_FUNDS = ("SHY", "IEF", "TLT", "LQD", "TIP", "BNDX", "BND", "AGG", "VGIT", "IEI", "GOVT", "VCIT", "IBTA", "AGGG", "VAGF")
 INDEX_FUNDS = ("SPY", "VOO", "IVV", "SPLG", "CSPX", "VUSA", "SXR8", "VUAA", "VEA", "VWO", "XLP", "XLU", "XLV", "GLD", "QQQ", "VT", "VTI", "IWDA", "SWDA")
 BUY_FUND = {"bonds": "IEF", "etfs": "SPY"}          # what new money buys for a fund part (the funds the engine already prices)
@@ -238,9 +236,8 @@ def run(closes=None, now=None):
     A = assumptions(closes, assets, float(opt.get("rf") or 0.04), float(opt.get("erp") or 0.05), act)
     tg, hist = read_target()
     cur = dict((k, act["pct"][k]) for k in PARTS)
-    out = {"as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "definitions": DEFS, "presets": PRESETS, "actual": act, "target": tg, "history": hist["changes"][-30:],
+    out = {"as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "definitions": DEFS, "presets": [], "actual": act, "target": tg, "history": hist["changes"][-30:],
            "assumptions": A, "max_loss": max_loss, "current_preview": preview(cur, A, max_loss) if A and act["invested"] else None,
-           "preset_previews": dict((p["name"], preview(p, A, max_loss)) for p in PRESETS) if A else {},
            "method": "Plain code (ops/engine/allocation.py). Parts by type: bond funds are BONDS, index and other non-bond funds ETFs, everything else STOCKS. Percentages are of the invested money; cash is shown apart and counts as new money for the plan."}
     if tg:
         out["target_preview"] = preview(tg, A, max_loss) if A else None

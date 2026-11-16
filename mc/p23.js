@@ -40,7 +40,7 @@ var bars=P.map(function(k){return '<div class="q" style="margin-top:6px"><div st
 var pre=(a.presets||[]).map(function(p){return '<button class="btn sm" data-p23p="'+p.stocks+'|'+p.bonds+'|'+p.etfs+'">'+esc(p.name)+" "+p.stocks+"/"+p.bonds+"/"+p.etfs+'</button>';}).join(" ");
 var changed=!t||P.some(function(k){return s[k]!==t[k];})||band!==(t.band||5)||sales!==!!t.allow_sales;
 return M.blk("TARGET SPLIT",'<span class="stg '+(t?"live":"paper")+'">'+(t?"SET "+esc(String(t.set_at||"").slice(0,10)):"NOT SET")+'</span>',
-'<div class="src">Presets: '+pre+'</div>'+bars+
+'<div class="src" style="white-space:normal">Set your own split: drag a slider or type a number; the unlocked parts adjust so the total stays 100%.</div>'+bars+
 '<div class="q gap" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><span class="src">Tolerance band +-<input type="number" min="1" max="20" value="'+band+'" data-p23b="1" style="width:52px"> points</span><label class="src"><input type="checkbox" data-p23s="1"'+(sales?" checked":"")+'> allow sales to reach the target</label></div>'+
 (changed?'<div class="fl" style="margin-top:8px">BEFORE YOU SAVE: THIS SPLIT AGAINST YOUR CURRENT ONE</div>'+compare(a,s)+moves(a,s)+'<div class="gap"><button class="btn" data-p23="save">Save this split</button> <button class="btn sm" data-p23="reset">Reset</button></div>':"")+
 (note?'<div class="src">'+esc(note)+'</div>':"")+plan(a),

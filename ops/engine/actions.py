@@ -584,14 +584,51 @@ def fund_buy(usd, ctx, t, px, part):
             "part": part}
 
 
-def alloc_sells(ctx):
-    # sales toward the target split, only when Ben allowed them in the target; never a conviction holding
-    out = []
-    for s in ((ctx.get("alloc") or {}).get("plan") or {}).get("steps") or []:
-        if s.get("type") == "SELL" and s.get("ticker") and s["ticker"] not in ctx["keeps"] and s["ticker"] in ctx["hold"]:
-            out.append({"type": "SELL", "ticker": s["ticker"], "key": "ALLOC:SELL:" + s["ticker"], "usd": s["usd"], "fees": s["fees"],
-                        "line": s["line"] + " Toward your target split.", "head": "Sell $%.2f of %s toward your target split" % (s["usd"], s["ticker"])})
-    return out
+def alloc_tickets(ctx, cash):
+    """Order tickets for the target split (Ben, 16 Nov 2026): every plan step as a full action card with shares, limit, fees
+    and tax, on the same action list (and so in the same phone message). Sales only if he allowed them; never a conviction
+    holding. Returns (tickets, cash left)."""
+    out, proceeds = [], 0.0
+    steps = ((ctx.get("alloc") or {}).get("plan") or {}).get("steps") or []
+    for s in steps:
+        t = s.get("ticker")
+        if s.get("type") != "SELL" or not t or t in ctx["keeps"] or t not in ctx["hold"]:
+            continue
+        h = ctx["hold"][t]
+        if not h.get("price"):
+            continue
+        sn = sell_numbers(t, ctx, qty=min(h["qty"], s["usd"] / float(h["price"])))
+        a = {"type": "SELL", "ticker": t, "key": "ALLOC:SELL:" + t, "alloc": True, "part": s.get("part"),
+             "line": "SELL %s %s at limit $%.2f: proceeds $%s after $%.2f fees; %s. Toward your target split (%s is above target, sales allowed by you)." % (
+                 fmt_sh(sn["shares"]), t, sn["limit"], money(sn["proceeds"]), sn["fees"], sn["tax_note"], str(s.get("part", "")).upper()),
+             "head": "Sell %s %s toward your target split" % (fmt_sh(sn["shares"]), t)}
+        a.update(dict((k, v) for k, v in sn.items() if k not in a))
+        proceeds += sn["proceeds"]
+        out.append(a)
+    px_of = dict(ctx.get("fund_px") or {})
+    if ctx.get("spy"):
+        px_of["SPY"] = ctx["spy"]
+    for s in steps:
+        t = s.get("ticker")
+        if s.get("type") != "BUY" or not t or not px_of.get(t):
+            continue
+        from_sale = "proceeds" in s.get("line", "")
+        budget = proceeds if from_sale else cash
+        if budget < MIN_ORDER:
+            continue
+        a = fund_buy(min(budget, s["usd"]), ctx, t, float(px_of[t]), s["part"])
+        if not a:
+            continue
+        a["alloc"] = True
+        if from_sale:
+            a["key"] += ":PROCEEDS"
+            a["pays_with"] = "the sale proceeds above"
+            a["line"] = a["line"].replace("the part furthest below your target split", "toward your target split, paid with the sale above")
+            proceeds -= a["usd"] + a["fees"]
+        else:
+            cash -= a["usd"] + a["fees"]
+        out.append(a)
+    return out, cash
 
 
 def today(ctx):
@@ -642,8 +679,10 @@ def today(ctx):
                  "head": "Sell %s %s (below your maximum-loss line)" % (fmt_sh(sn["shares"]), t)}
             a.update(dict((k, v) for k, v in sn.items() if k not in a))
             acts.append(a)
-    acts += alloc_sells(ctx)
-    if not [a for a in acts if a["type"] in ("BUY", "SWAP")] and ctx.get("spy") and cash >= MIN_ORDER and not ctx["stale"]:
+    if ((ctx.get("alloc") or {}).get("plan") or {}).get("steps") and not ctx["stale"]:
+        tk, cash = alloc_tickets(ctx, cash)
+        acts += tk
+    elif not [a for a in acts if a["type"] in ("BUY", "SWAP")] and ctx.get("spy") and cash >= MIN_ORDER and not ctx["stale"]:
         a = core_buy(cash, ctx)
         if a:
             acts.append(a)
