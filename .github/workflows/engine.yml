@@ -83,10 +83,10 @@ jobs:
           QUICK: ${{ github.event.inputs.quick }}
         run: |
           mkdir -p state/logs
-          FILES="engine books research decide asks"
+          FILES="engine books research decide qlab asks"
           if [ "$QUICK" = "1" ] && [ -f state/quant.json ] && [ -f state/lab.json ]; then
             echo "Only answers changed: running the decision desk alone."
-            FILES="decide asks"
+            FILES="decide qlab asks"
             export MC_QUICK=1
           fi
           for n in $FILES; do

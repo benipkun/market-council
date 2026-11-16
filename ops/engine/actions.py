@@ -691,6 +691,11 @@ def today(ctx):
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx), ctx))
     acts += [hold_keep(t, ctx) for t in sorted(ctx["keeps"]) if t in ctx["hold"]]
+    # QUANT LAB runs Ben sent to the engine (16 Nov 2026): a note on the line for the same ticker, never a change to an order
+    for x in (rj("state/qlab/inputs.json", {}) or {}).get("inputs") or []:
+        for a in acts:
+            if a.get("ticker") == x.get("ticker") and x.get("headline"):
+                a["line"] = a.get("line", "") + " Quant lab (%s, %s, sent by you): %s" % (x.get("tool"), x.get("label"), x["headline"])
     return number(acts), cands
 
 
