@@ -134,6 +134,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run watch.yml --repo "$GITHUB_REPOSITORY" || echo "The health check could not be started."
+      # 17 Nov 2026: the clock's own schedule is skipped too, so every engine run restarts the clock if it is not running.
+      - name: Restart the clock if it stopped
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow clock.yml --limit 5 --json status -q '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo 1)
+          if [ "$n" = "0" ]; then gh workflow run clock.yml --repo "$GITHUB_REPOSITORY" && echo "clock restarted"; else echo "clock running"; fi
       - name: Tell the phone if this job failed
         if: failure()
         env:
