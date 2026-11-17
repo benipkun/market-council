@@ -504,7 +504,7 @@ def build_ctx(dec=None):
     CONVICTION.clear()
     CONVICTION.update((dec.get("keeps") or {}).keys())
     split = PR.split(snap, dec.get("keeps") or {}, (lim or {}).get("side_cap"))
-    # Ben's target split (16 Nov 2026) replaces the 25% cap once he has saved one: STOCKS may grow up to target + band,
+    # Ben's target split (16 Nov 2026) replaces the 45% cap (25% until 17 Nov 2026) once he has saved one: STOCKS may grow up to target + band,
     # and new money goes to the part furthest below target
     alloc = rj("state/allocation.json", {}) or {}
     if alloc.get("target") and alloc.get("actual"):

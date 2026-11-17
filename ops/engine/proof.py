@@ -12,7 +12,7 @@ import re
 
 PAPER_MIN = 20          # paper ideas at the three-month mark before a signal may raise real-money cards
 MARK = "3m"
-SIDE_CAP = 0.25         # stock ideas may take at most this share of the portfolio (outside the core and the conviction bet)
+SIDE_CAP = 0.45         # stock ideas may take at most this share of the portfolio (outside the core and the conviction bet); Ben raised it from 25% on 17 Nov 2026
 INDEX = ("SPY", "VOO", "IVV", "SPLG", "CSPX", "VUSA", "SXR8", "SPY5", "IUSA", "VUAA")
 NAMES = {"SCORE": "Seven-check scorecard (5 or more of 7)", "VALUE": "Price under our fair value",
          "rule:pullback": "Pullback in an uptrend", "rule:dip": "Buy the dip", "rule:breakout": "Breakout", "rule:three_down": "Three down days"}

@@ -44,6 +44,10 @@ jobs:
               fi
               done_slots="$done_slots $slot"
             fi
+            # the wide screen twice on weekdays (17 Nov 2026: picks came too slowly), before the 06:40 and 13:40 engine runs
+            HM=$((10#$H$M)); if [ "$D" -le 5 ] && { { [ $HM -ge 520 ] && [ $HM -lt 600 ]; } || { [ $HM -ge 1230 ] && [ $HM -lt 1310 ]; }; } && [ "$(started screen.yml)" -ge 120 ]; then
+              gh workflow run screen.yml -R "$R" && echo "$(date -u +%H:%M) wide screen started"
+            fi
             sleep 60
           done
       - name: Hand over to the next clock

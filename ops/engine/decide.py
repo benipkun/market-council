@@ -822,7 +822,7 @@ SIZES = (100.0, 500.0, 1000.0)     # shown on every card until Ben names his own
 FEE_PCT, FEE_MIN = 0.0, 0.02      # Ben's Revolut plan: about 1 to 2 cents a trade (his figure, 23 Oct 2026); past the plan's free trades Revolut charges 0.25%, at least one euro
 PAY_SHARE = 0.10                   # where no measured average exists, an idea "pays" when fees take under a tenth of the planned gain
 DESK_PASS = 5
-DESK_SCORE_MAX = 3                 # the best three scorecard ideas become cards; the others are listed underneath
+DESK_SCORE_MAX = 6                 # the best six scorecard ideas become cards (three until 17 Nov 2026: Ben, too few picks); the others are listed underneath
 RULE_STOP = {"pullback": 0.08, "dip": 0.12}
 EASE = ["trend", "drift", "value", "insiders", "holders", "momentum", "quality"]
 

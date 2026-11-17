@@ -24,7 +24,7 @@ EUROPE = ("United Kingdom", "Netherlands", "Switzerland", "Ireland", "France", "
 N_US, N_EU = 240, 60          # universe size: the largest by market value
 STATEMENTS_MAX = 160          # statements are fetched for at most this many shares in an upward trend
 FINALISTS = 40                # insider and holder pages are fetched only for these
-ADD_MAX = 10                  # at most this many are handed to the research engine for a full card
+ADD_MAX = 20                  # at most this many are handed to the research engine for a full card (10 until 17 Nov 2026: Ben, too few picks)
 BUDGET = 19 * 60              # seconds; the run stops adding work after this (the job itself is cut off at 25 minutes)
 SECTOR = {"Finance": "Financials"}
 
