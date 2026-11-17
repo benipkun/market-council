@@ -521,7 +521,7 @@ def build_ctx(dec=None):
             "today": datetime.datetime.now(datetime.timezone.utc).date(),
             "index_mu": float(((rj("state/quant.json", {}) or {}).get("opt") or {}).get("rf") or 0.04) + 0.05,
             "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector, "back": back, "split": split, "alloc": alloc,
-            "fund_px": dict((t, (((rj("state/quant.json", {}) or {}).get("assets") or {}).get(t) or {}).get("last")) for t in ("IEF", "SPY")), "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}), "feedback": pick_feedback(),
+            "fund_px": dict((t, (((rj("state/quant.json", {}) or {}).get("assets") or {}).get(t) or {}).get("last")) for t in ("IEF", "SPY")), "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}), "feedback": pick_feedback(), "plans": dict((h.get("ticker"), h) for h in (rj("state/plans.json", {}) or {}).get("holdings") or [] if h.get("ticker") and not h.get("kept")),
             "held_sectors": sorted(set(sector.get(p.get("ticker")) for p in snap.get("positions") or [] if sector.get(p.get("ticker"))))}
 
 
@@ -718,6 +718,21 @@ def today(ctx):
                  "head": "Sell %s %s (below your maximum-loss line)" % (fmt_sh(sn["shares"]), t)}
             a.update(dict((k, v) for k, v in sn.items() if k not in a))
             acts.append(a)
+    # Ben, 17 Nov 2026: consider selling on a reasonable upside. A holding (never a conviction holding) that has reached the
+    # take-profit in its order plan gets a SELL line with its numbers; the proceeds become free cash for the next action
+    for t, pl in sorted((ctx.get("plans") or {}).items()):
+        h = ctx["hold"].get(t)
+        tp = pl.get("take_profit")
+        if not h or t in ctx["keeps"] or not tp or not h.get("price") or float(h["price"]) < float(tp) or t in [a.get("ticker") for a in acts if a["type"] == "SELL"]:
+            continue
+        sn = sell_numbers(t, ctx)
+        a = {"type": "SELL", "ticker": t, "key": "TP:" + t, "take_profit": True, "flags": ["take-profit reached"],
+             "line": "SELL %s %s at limit $%.2f: it reached the take-profit of $%.2f in its plan (%s). Proceeds $%s after $%.2f fees; %s." % (
+                 fmt_sh(sn["shares"]), t, sn["limit"], float(tp), pl.get("take_profit_why") or "the plan's target", money(sn["proceeds"]), sn["fees"], sn["tax_note"]),
+             "head": "Sell %s %s: take-profit reached" % (fmt_sh(sn["shares"]), t)}
+        a.update(dict((k, v) for k, v in sn.items() if k not in a))
+        acts.append(a)
+        cash += sn["proceeds"]
     if ((ctx.get("alloc") or {}).get("plan") or {}).get("steps") and not ctx["stale"]:
         tk, cash = alloc_tickets(ctx, cash)
         acts += tk

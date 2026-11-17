@@ -844,6 +844,28 @@ class TargetSplit(unittest.TestCase):
             AL.ROOT = old
 
 
+class TakeProfitSell(unittest.TestCase):
+    """Ben, 17 Nov 2026: a holding that reached the take-profit in its plan gets a SELL line; never a conviction holding;
+    a rejected pick leaves the list."""
+
+    def test_take_profit_reached_sells_but_never_the_keep(self):
+        c = Actions.ctx(Actions(), plans={"OLD": {"take_profit": 19.0}, "KEEP": {"take_profit": 60.0}})
+        acts, _ = A.today(c)
+        tp = [a for a in acts if str(a.get("key")).startswith("TP:")]
+        self.assertEqual([a["ticker"] for a in tp], ["OLD"])
+        self.assertTrue(tp[0]["shares"] > 0 and tp[0]["fees"] >= 1.0)
+        self.assertFalse(any(a.get("ticker") == "KEEP" and a["type"] == "SELL" for a in acts))
+
+    def test_not_reached_no_sell(self):
+        c = Actions.ctx(Actions(), plans={"OLD": {"take_profit": 25.0}})
+        self.assertFalse(any(str(a.get("key")).startswith("TP:") for a in A.today(c)[0]))
+
+    def test_rejected_pick_leaves_the_list(self):
+        c = Actions.ctx(Actions(), feedback={"NEW": {"choice": "reject", "on": "2026-10-14"}})
+        acts, _ = A.today(c)
+        self.assertFalse(any(A.act_ticker(a) == "NEW" for a in acts))
+
+
 class PickFeedback(unittest.TestCase):
     """Ben, 17 Nov 2026: Reject hides a pick for 14 days, Move to bottom puts it last for 7, Undo clears both."""
 
