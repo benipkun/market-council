@@ -25,7 +25,22 @@ if(e.text)s.push("Evidence: "+esc(e.text));
 if(a.effect)s.push(esc(a.effect));(a.closest||[]).forEach(function(c){s.push("Closest idea: "+esc(c));});if(a.valid_until)s.push("Card valid until "+esc(a.valid_until)+". "+esc(a.exit_rule||""));
 var flags=(a.flags||[]).map(function(x){return '<span class="stg '+(x==="unproven"?"stale":"paper")+'" style="margin-left:6px">'+esc(x.toUpperCase())+'</span>';}).join("");
 return '<div class="q" style="margin-top:8px"><span class="stg '+(TAG[a.type]||"paper")+'">'+(a.n||"")+". "+a.type+'</span>'+flags+(a.head?'<div style="font-size:15px;color:var(--tx);font-weight:800;margin:4px 0;white-space:normal">'+esc(a.head)+'</div>':"")+'<div style="font-size:'+(a.head?'12px;color:var(--dim);font-weight:400':'13px;color:var(--tx);font-weight:700')+';margin:4px 0;white-space:normal">'+esc(a.line||"")+'</div>'+
-s.map(function(x){return '<div class="src" style="white-space:normal">'+x+'</div>';}).join("")+'</div>';}
+s.map(function(x){return '<div class="src" style="white-space:normal">'+x+'</div>';}).join("")+fbBtns(a)+'</div>';}
+/* Ben, 17 Nov 2026: Reject (gone for 14 days) or Move to bottom (last for 7 days) on every pick; Undo on a moved one */
+function fbT(a){return (a.buy&&a.buy.ticker)||a.ticker;}
+function fbBtns(a){var t=fbT(a);if(!t||["BUY","SELL","SWAP"].indexOf(a.type)<0)return "";var st=fbNote[t];
+return '<div class="gap" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+(a.later?'<button class="btn sm" data-p11f="undo|'+esc(t)+'">Undo: back to its place</button>':
+'<button class="btn sm" data-p11f="reject|'+esc(t)+'">Reject</button><button class="btn sm" data-p11f="later|'+esc(t)+'">Move to bottom</button>')+(st?'<span class="src">'+esc(st)+'</span>':"")+'</div>';}
+var fbNote={};
+function sendFb(ch,t){var tok=MC.store(MC.K.tok);if(!tok){fbNote[t]="Add your token in the Log tab first.";M.render();return;}
+var ts=new Date().toISOString().replace(/[-:]/g,"").slice(0,15)+"Z",obj={kind:"pick_feedback",ticker:t,choice:ch,at:new Date().toISOString().slice(0,19)+"Z"};
+fbNote[t]="Sending"+String.fromCharCode(8230);M.render();
+fetch(API+"/contents/answers/pick-"+ts+"-"+t.replace(/[^A-Z0-9]/g,"")+".json",{method:"PUT",headers:{"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json","Content-Type":"application/json"},
+body:JSON.stringify({message:"Market Council: "+ch+" "+t,content:btoa(JSON.stringify(obj))})}).then(function(r){
+fbNote[t]=r.ok?(ch==="reject"?"Rejected. The list is redone without it in a few minutes; the cash goes to the next idea.":ch==="later"?"Moved to the bottom. The list is redone in a few minutes.":"Undone. The list is redone in a few minutes."):"Could not be sent ("+r.status+").";
+if(r.ok)[90,180,300].forEach(function(x){setTimeout(M.reload,x*1000);});M.render();}).catch(function(){fbNote[t]="Could not be sent. Check your connection.";M.render();});}
+document.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest("[data-p11f]");if(!b)return;var p=b.getAttribute("data-p11f").split("|");
+if(p[0]==="reject"&&!window.confirm("Reject "+p[1]+"? It leaves the action list for 14 days."))return;sendFb(p[0],p[1]);});
 function list(acts){return (acts||[]).map(line).join("");}
 function reply(){if(!asked)return "";var L=((M.X.amsg||{}).messages||[]),q=null,r=null;
 L.forEach(function(m){if(m.from==="ben"&&m.text===asked.text&&m.at>=asked.at)q=m;});if(q)L.forEach(function(m){if(m.reply_to===q.id)r=m;});
@@ -44,7 +59,7 @@ return '<div class="q" style="margin-top:6px;border-left:4px solid var(--ac);pad
 (f.withdrawn||[]).map(function(x){return '<div style="font-size:13px;margin-top:6px;white-space:normal;color:var(--wn)">'+esc(x)+'</div>';}).join("")+
 (f.dropped||[]).map(function(x){return '<div style="font-size:13px;margin-top:6px;white-space:normal;color:var(--wn)">'+esc(x)+'</div>';}).join("")+
 (f.stale?'<div style="font-size:12px;color:var(--wn);margin-top:6px">'+esc(f.stale_note||"The last run failed its contradiction check; this is the last good answer.")+'</div>':"")+
-(f.standing||[]).map(function(x){return '<div style="font-size:12px;color:var(--dim);margin-top:6px;white-space:normal">Your standing decision: '+esc(x)+'</div>';}).join("")+'</div>';}
+'</div>';}
 function html(){var a=M.X.acts;if(!a||!a.actions)return "";
 var top=a.actions[0]||{},v=view,cnt=a.actions.filter(function(x){return !x.decision;}).length;
 var acts=a.final?a.actions.filter(function(x){return x.type!=="HOLD";}):a.actions;

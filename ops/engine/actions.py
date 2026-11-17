@@ -21,6 +21,7 @@ questions:
     python3 ops/engine/actions.py ask "Should I sell CHWY?"
 Standard library only, so the routine can run it without the engine's other parts."""
 import datetime
+import glob
 import json
 import math
 import os
@@ -520,7 +521,7 @@ def build_ctx(dec=None):
             "today": datetime.datetime.now(datetime.timezone.utc).date(),
             "index_mu": float(((rj("state/quant.json", {}) or {}).get("opt") or {}).get("rf") or 0.04) + 0.05,
             "books_as_of": snap.get("as_of"), "desk_as_of": dec.get("as_of"), "sector": sector, "back": back, "split": split, "alloc": alloc,
-            "fund_px": dict((t, (((rj("state/quant.json", {}) or {}).get("assets") or {}).get(t) or {}).get("last")) for t in ("IEF", "SPY")), "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}),
+            "fund_px": dict((t, (((rj("state/quant.json", {}) or {}).get("assets") or {}).get(t) or {}).get("last")) for t in ("IEF", "SPY")), "recent_buys": recent_buys(rj("treasury/ledger.json", {}) or {}), "feedback": pick_feedback(),
             "held_sectors": sorted(set(sector.get(p.get("ticker")) for p in snap.get("positions") or [] if sector.get(p.get("ticker"))))}
 
 
@@ -631,9 +632,47 @@ def alloc_tickets(ctx, cash):
     return out, cash
 
 
+REJECT_DAYS, LATER_DAYS = 14, 7
+
+
+def pick_feedback(today_day=None):
+    """Ben's Reject / Move-to-bottom buttons on the action list (17 Nov 2026), from answers/pick-*.json. The latest
+    choice per ticker counts: "reject" hides it for 14 days, "later" moves it to the bottom for 7, "undo" clears both."""
+    day = today_day or datetime.datetime.now(datetime.timezone.utc).date()
+    out = {}
+    for p in sorted(glob.glob(os.path.join(ROOT, "answers", "pick-*.json"))):
+        try:
+            f = json.load(open(p, encoding="utf-8"))
+        except Exception:
+            continue
+        t, ch = str(f.get("ticker") or "").upper(), f.get("choice")
+        if f.get("kind") != "pick_feedback" or not t or ch not in ("reject", "later", "undo"):
+            continue
+        try:
+            at = datetime.date.fromisoformat(str(f.get("at"))[:10])
+        except Exception:
+            continue
+        if ch == "undo":
+            out.pop(t, None)
+        elif (day - at).days < (REJECT_DAYS if ch == "reject" else LATER_DAYS):
+            out[t] = {"choice": ch, "on": at.isoformat()}
+        else:
+            out.pop(t, None)
+    return out
+
+
+def act_ticker(a):
+    return (a.get("buy") or {}).get("ticker") or a.get("ticker")
+
+
 def today(ctx):
     cands = candidates(ctx)
-    good = sorted([x for x in cands if qualifies(x)], key=rank)
+    fb = ctx.get("feedback") or {}
+    for x in cands:
+        if (fb.get(x["t"]) or {}).get("choice") == "reject":
+            x["skip_reason"] = "you rejected it on %s (it can come back after %d days, or press Undo)" % (fb[x["t"]]["on"], REJECT_DAYS)
+    good = sorted([x for x in cands if qualifies(x) and (fb.get(x["t"]) or {}).get("choice") != "reject"], key=rank)
+    good = [x for x in good if (fb.get(x["t"]) or {}).get("choice") != "later"] + [x for x in good if (fb.get(x["t"]) or {}).get("choice") == "later"]
     acts, cash, used, sold = [], ctx["free_cash"], {}, set()
     for x in good:
         sp = ctx.get("split") or {}
@@ -690,7 +729,16 @@ def today(ctx):
     ctx["self_check"] = bad
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx), ctx))
-    acts += [hold_keep(t, ctx) for t in sorted(ctx["keeps"]) if t in ctx["hold"]]
+    # Ben, 17 Nov 2026: his conviction holding is no longer repeated under the action list (it stays on PORTFOLIO)
+    rej = [a for a in acts if a["type"] in ("BUY", "SWAP", "SELL") and (fb.get(act_ticker(a)) or {}).get("choice") == "reject"]
+    acts = [a for a in acts if a not in rej]
+    later = [a for a in acts if a["type"] in ("BUY", "SWAP", "SELL") and (fb.get(act_ticker(a)) or {}).get("choice") == "later"]
+    for a in later:
+        a["later"] = fb[act_ticker(a)]["on"]
+        a.setdefault("flags", []).append("moved to the bottom by you")
+    acts = [a for a in acts if a not in later] + later
+    if not acts:
+        acts.append(hold_top(why_nothing(cands, ctx) + (" You rejected: %s." % ", ".join(sorted(set(act_ticker(a) for a in rej))) if rej else ""), ctx))
     # QUANT LAB runs Ben sent to the engine (16 Nov 2026): a note on the line for the same ticker, never a change to an order
     for x in (rj("state/qlab/inputs.json", {}) or {}).get("inputs") or []:
         for a in acts:

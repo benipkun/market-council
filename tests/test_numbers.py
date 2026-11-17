@@ -434,7 +434,7 @@ class Actions(unittest.TestCase):
         self.assertAlmostEqual(a["expected_usd"], 3.36, places=2)               # 100 x (0.5 x 16% - 0.3 x 8%) - 2 x $1.12
         self.assertAlmostEqual(a["net_cash"], 97.76, places=2)                  # 198.88 - 100 - 1.12
         self.assertEqual(a["evidence"]["label"], "unproven")                    # one of its two passed checks has no record yet
-        self.assertEqual([x["type"] for x in acts[1:]], ["HOLD"])               # the kept holding comes last, as a hold
+        self.assertEqual([x["type"] for x in acts[1:]], [])                     # Ben, 17 Nov 2026: no conviction line under the list
 
     def test_a_kept_holding_is_never_offered_for_sale(self):
         a = A.should_sell("keep", self.ctx())[0]
@@ -844,6 +844,27 @@ class TargetSplit(unittest.TestCase):
             AL.ROOT = old
 
 
+class PickFeedback(unittest.TestCase):
+    """Ben, 17 Nov 2026: Reject hides a pick for 14 days, Move to bottom puts it last for 7, Undo clears both."""
+
+    def test_reject_later_undo(self):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "answers"))
+        def w(n, t, ch, at):
+            json.dump({"kind": "pick_feedback", "ticker": t, "choice": ch, "at": at}, open(os.path.join(d, "answers", "pick-%s.json" % n), "w"))
+        w("1", "MRK", "reject", "2026-11-17"); w("2", "PFE", "later", "2026-11-17"); w("3", "KO", "reject", "2026-11-01"); w("4", "MO", "reject", "2026-11-16"); w("5", "MO", "undo", "2026-11-17")
+        old = A.ROOT
+        A.ROOT = d
+        try:
+            fb = A.pick_feedback(datetime.date(2026, 11, 17))
+        finally:
+            A.ROOT = old
+        self.assertEqual(fb["MRK"]["choice"], "reject")
+        self.assertEqual(fb["PFE"]["choice"], "later")
+        self.assertNotIn("KO", fb)        # older than 14 days
+        self.assertNotIn("MO", fb)        # undone
+
+
 class SplitTickets(unittest.TestCase):
     """Ben, 16 Nov 2026: the split plan becomes order tickets (shares, limit, fees) on the action list; UBER never sold."""
 
@@ -1013,7 +1034,7 @@ class OneAnswer(unittest.TestCase):
         self.assertIn("your standing decision to keep KEEP", v["SELL:KEEP"]["label"])
         self.assertTrue(v["CORE"]["label"].startswith("PAPER ONLY"))
         f = A.final_answer(A.today(c)[0])
-        self.assertTrue(any("KEEP" in s for s in f["standing"]))                  # the kept holding is named under the answer
+        self.assertFalse(any("KEEP" in s for s in f["standing"]))                 # Ben, 17 Nov 2026: not repeated under the answer
 
     def write(self, d, rel, o):
         p = os.path.join(d, rel)
