@@ -1534,6 +1534,13 @@ def main():
         plan.pop(k, None)
     plan["part"], plan["next_part_due"] = part, max(due, day(now)).isoformat() if plan["needed"] else None
 
+    # 17 Nov 2026: a greyed card today's answer did not weigh (PFE, raised under the old 25% cap) kept its "Buy $..." title,
+    # so the contradiction check failed every run. A greyed card never says buy or sell: it says it is not an action today.
+    for c in cards:
+        if c.get("status") == "open" and c.get("greyed") and re.match(r"^\s*(Buy|Sell|BUY|SELL)\b", str(c.get("title") or "")):
+            c["title"] = c["title_plain"] = "%s: not an action today" % (c.get("ticker") or c.get("name") or "Card")
+            if not c.get("verdict"):
+                c["grey_reason"] = c["label"] = "Not an action today: today's answer did not weigh this card."
     hp = holds(pos, quant, ix, digest, ledger, prof)
     for t, k in keeps.items():
         if t in hp:
