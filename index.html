@@ -844,7 +844,7 @@ return '<div class="prow"><div class="prh"><span class="tk">'+esc(p.ticker)+'</s
 '<div class="bar'+(pn>=25?" hot":"")+'"><i style="width:'+Math.min(100,Math.max(0,pn)).toFixed(1)+'%"></i></div>'+
 '<div class="prm"><span>'+pn.toFixed(1)+'% of total</span><span class="mono '+(pl>=0?"up":"dn")+'">'+money(pl,true)+
 (plp!=null?" ("+pct(plp)+")":"")+'</span></div>'+
-'<div class="prm"><span>cost '+money(c)+(p.last_price!=null?" &middot; last "+usd(p.last_price):"")+'</span>'+
+'<div class="prm"><span>paid '+money(c)+' in all'+(p.last_price!=null?" &middot; now "+usd(p.last_price)+" a share":"")+'</span>'+
 '<span>'+(p.price_as_of?"priced "+ago(p.price_as_of):"")+'</span></div>'+
 '<div class="pact"><button class="btn sm" data-log="1" data-t="'+esc(p.ticker)+'" data-act="buy">Bought more</button>'+
 '<button class="btn sm" data-log="1" data-t="'+esc(p.ticker)+'" data-act="sell">Sold some</button></div></div>';
@@ -854,8 +854,12 @@ return '<div class="prow"><div class="prh"><span class="tk">'+esc(p.ticker)+'</s
 '<div class="pact"><button class="btn sm" data-log="1" data-act="deposit">Deposit</button>'+
 '<button class="btn sm" data-log="1" data-act="withdraw">Withdraw</button></div></div>';
 var notes=[];
-(t.concentration_flags||[]).forEach(function(x){notes.push('<div class="msg warn gap">'+esc(x)+'</div>');});
-(t.trim_considerations||[]).forEach(function(c){notes.push('<div class="msg gap"><b>'+esc(c.ticker)+
+/* board cycle 8: the conviction holding's concentration is shown once, as a fact, by the results block; the pipeline's
+   concentration and trim notes on it are not shown (standing decision of 15 Nov 2026) */
+var kx=window.MCX&&window.MCX.X||{},keepT=Object.keys((kx.dec&&kx.dec.keeps)||{}).concat(((kx.results&&kx.results.conviction&&kx.results.conviction.positions)||[]).map(function(p){return p.ticker;}));
+function onKeep(s){return keepT.some(function(k){return k&&new RegExp("\\b"+k+"\\b").test(String(s||""));});}
+(t.concentration_flags||[]).forEach(function(x){if(onKeep(x))return;notes.push('<div class="msg warn gap">'+esc(x)+'</div>');});
+(t.trim_considerations||[]).forEach(function(c){if(onKeep(c.ticker)||onKeep(c.note))return;notes.push('<div class="msg gap"><b>'+esc(c.ticker)+
 ' is '+Number(c.pct_nav).toFixed(1)+'% of total.</b> '+esc(c.note||"")+'</div>');});
 $("pf-notes").innerHTML=notes.join("");
 renderWhatIf(pos,num(t.nav)||0);

@@ -9,11 +9,14 @@ var GH="https://api.github.com/repos/benipkun/market-council-state",CODE="https:
 var MINUS=String.fromCharCode(8722),DASH=String.fromCharCode(8212),MID=String.fromCharCode(183),ARROW=String.fromCharCode(8594),
 LARR=String.fromCharCode(8592),NL=String.fromCharCode(10),SIGMA=String.fromCharCode(963);
 var SECT={"Technology":"#4aa3ff","Industrials":"#e8a33d","Health Care":"#b792ff","Consumer Discretionary":"#ff8fd0","Financials":"#5ad1e6",
-"Communication Services":"#ff9966","Broad market":"#c8d1e0","Defensive sectors":"#9db4d6","Bonds":"#8f9bff","Gold":"#d9c36a","Cash":"#7a879c","Unclassified":"#5f6b80"};
+"Communication Services":"#ff9966","Broad market":"#c8d1e0","Defensive sectors":"#9db4d6","Bonds":"#8f9bff","Gold":"#d9c36a","Cash":"#7a879c","Energy":"#ff7a59","Consumer Staples":"#a3d977","Utilities":"#6fd3b0","Materials":"#9fb1bd","Real Estate":"#d4a373","Unclassified":"#5f6b80"};
 var SHORT={"Consumer Discretionary":"CONSUMER DISC.","Communication Services":"COMMUNICATION","Defensive sectors":"DEFENSIVE"};
 var NB='<span class="stg nb">NOT BUILT YET</span>';
 function col(s){return SECT[s]||SECT.Unclassified;}
 function A(t){return (X.quant&&X.quant.assets&&X.quant.assets[t])||{};}
+/* board I41 (cycle 7): a share the engine has no sector for takes the trade check's sector (state/exposure.json), the one TODAY shows */
+function secOf(t){var s=A(t).sector;if(s&&s!=="Unclassified")return s;var e=(X.expo&&X.expo.exposure&&X.expo.exposure.positions)||[];for(var i=0;i<e.length;i++)if(e[i].ticker===t&&e[i].sector)return e[i].sector;return s||"Unclassified";}
+function secRowsOf(rows,P,cw){if(!rows.some(function(r){return r[0]==="Unclassified";})||!(X.expo&&X.expo.exposure))return rows;var g={},o=[];P.forEach(function(p){if(!(p.w>0))return;if(g[p.sec]==null){g[p.sec]=0;o.push(p.sec);}g[p.sec]+=p.w;});var out=o.map(function(k){return [k,g[k]];});if(cw>0)out.push(["Cash",cw]);return out.sort(function(a,b){return b[1]-a[1];});}
 function p1(v,d){var n=num(v);return n==null?DASH:(100*n).toFixed(d==null?1:d)+"%";}
 function sp(v,d){var n=num(v);if(n==null)return '<span class="fl">'+DASH+'</span>';var c=n>0?"up":(n<0?"dn":"fl");
 return '<span class="'+c+'">'+(n>0?"+":(n<0?MINUS:""))+Math.abs(100*n).toFixed(d==null?1:d)+'%</span>';}
@@ -32,7 +35,7 @@ function head(label,title,right){return '<div class="ph"><div><div class="lbl">/
 function seg(act,cur,opts){return '<div class="rng">'+opts.map(function(o){return '<button data-mc="'+act+'" data-v="'+o[0]+'" aria-pressed="'+(o[0]===cur)+'">'+o[1]+'</button>';}).join("")+'</div>';}
 function rho(a,b){var c=X.quant&&X.quant.corr;if(!c)return null;var i=c.tickers.indexOf(a),j=c.tickers.indexOf(b);return i<0||j<0?null:c.m[i][j];}
 function pos(){var tr=S.treasury||{},nav=num(tr.nav)||0;return MC.positions().map(function(p){var mv=num(p.market_value)||0,cb=num(p.cost_basis);
-return {t:p.ticker,mv:mv,cost:cb,w:nav?mv/nav:0,pl:cb?mv/cb-1:null,sec:A(p.ticker).sector||"Unclassified",px:num(p.last_price)};});}
+return {t:p.ticker,mv:mv,cost:cb,w:nav?mv/nav:0,pl:cb?mv/cb-1:null,sec:secOf(p.ticker),px:num(p.last_price)};});}
 function qAge(){return X.quant&&X.quant.as_of;}
 function psrc(){var p=X.quant&&X.quant.price_sources,k=p?Object.keys(p).filter(function(n){return n!=="none";}):[];return k.length?esc(k.join(" and ")):"public";}
 /* later phases plug in here: an add-on file registers slot renderers, tools, checklist tests and extra data files */
@@ -142,7 +145,7 @@ t2("Volatility",pf.vol_1y!=null?p1(pf.vol_1y,0):DASH,pf.vol_1y!=null?"a year "+M
 var mapB=view==="map"?'<div class="map">'+mapSvg(P,nav?cash/nav:0)+'</div><div id="map-info" class="src">Tap a position for its panel, or a line for the correlation behind it.</div>'+
 '<div class="leg"><span>Circle size = weight</span><span><i style="background:var(--ups);border:1px solid var(--up)"></i>+ gain since purchase</span><span><i style="background:var(--dns);border:1px solid var(--dn)"></i>'+MINUS+' loss</span><span>Line thickness = correlation (number on the line)</span></div>'
 :'<div>'+listRows(P)+'</div>'+(slow&&!st.pview?'<div class="gap"><button class="btn sm" data-mc="pv" data-v="map">Load the map</button></div>':"");
-var secRows=(pf.exposure&&pf.exposure.sector)||[];
+var secRows=secRowsOf((pf.exposure&&pf.exposure.sector)||[],P,nav?cash/nav:0);
 el.innerHTML=head("PORTFOLIO CORE","Portfolio",tag(tr.as_of,9))+
 '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><span class="lbl">Period</span>'+seg("rng",st.rng,[["1D","1D"],["1W","1W"],["1M","1M"],["YTD","YTD"],["ALL","ALL"]])+'</div>'+tiles+
 (vis?"":'<div class="src" style="margin:8px 0">Amounts are hidden on this device because this page is public; percentages still show. <button class="link" id="pf-show">Show amounts here</button></div>')+

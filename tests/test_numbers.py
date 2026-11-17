@@ -1299,5 +1299,68 @@ class BoardCycle6(unittest.TestCase):
         self.assertIn("Fixed on its own: 2.", BD.phone_text(row, None, [], []))
 
 
+class BoardCycle7(unittest.TestCase):
+    """Board cycle 7 (15 Nov 2026): safe-lane fixes and the tests Ben's B7 and B9 changes lacked."""
+
+    def read(self, rel):
+        with open(os.path.join(HERE, "..", rel), encoding="utf-8") as f:
+            return f.read()
+
+    def test_books_line_says_paid_in_all_and_price_a_share(self):
+        html = self.read("index.html")
+        self.assertIn("<span>paid '+money(c)+' in all'", html)
+        self.assertIn('" &middot; now "+usd(p.last_price)+" a share"', html)
+        self.assertNotIn('" &middot; last "+usd(p.last_price)', html)
+
+    def test_map_takes_the_trade_check_sector_when_the_engine_has_none(self):
+        js = self.read("mc/app.js")
+        self.assertIn("function secOf(t)", js)
+        self.assertIn("sec:secOf(p.ticker)", js)
+        self.assertIn("X.expo.exposure.positions", js)
+        self.assertIn("var secRows=secRowsOf(", js)
+        for s in ("Energy", "Consumer Staples", "Utilities"):
+            self.assertIn('"%s":"#' % s, js)
+
+    def test_first_sentence_is_short_and_keeps_todays_reason_in_why(self):
+        r = ("No stock idea has proven itself on paper yet (each signal needs 20 paper ideas at the three-month mark that beat "
+             "the S&P 500 fund after fees), and $25 of free cash is under the $100 minimum order, so it waits; new money goes "
+             "to the S&P 500 fund (core first).")
+        short = ANS.short_reason(r)
+        self.assertLessEqual(len(short.split()), 40)
+        self.assertTrue(short.startswith("No stock idea has proven itself on paper yet, and $25"))
+        self.assertNotIn("(", short)
+        self.assertLessEqual(len(ANS.short_reason("word " * 80).split()), 40)
+
+    def test_a_sell_question_on_a_share_not_held_says_sell(self):
+        src = self.read("ops/engine/answer.py")
+        self.assertIn('"sell" if "sell" in s and "swap" not in s else "swap"', src)
+
+    def test_b9_fair_test_needs_spread_over_time(self):
+        # 120 checks bunched into one week of one month: not proven, even when it beats both rivals
+        done = [({"id": "a%d" % i, "p": 0.9, "plain": 0.5}, 1) for i in range(120)]
+        scores = dict(("a%d" % i, {"on": "2026-11-0%d" % (2 + i % 5)}) for i in range(120))
+        self.assertFalse(F.fair_test(done, scores, "2026-11-15").get("proven_live"))
+        # the same checks spread over three calendar months and many weeks: proven when the report card beats both
+        days = [datetime.date(2026, 8, 20) + datetime.timedelta(days=i * 72 // 120) for i in range(120)]
+        scores = dict(("a%d" % i, {"on": d.isoformat()}) for i, d in enumerate(days))
+        self.assertTrue(F.fair_test(done, scores, "2026-11-01").get("proven_live"))
+
+    def test_b7_personal_guide_is_capped_at_three_percent(self):
+        src = self.read("ops/engine/engine.py")
+        self.assertIn('lim["risk_per_trade"] = min(0.03, max(0.0025, float(prof["risk_per_trade"])))', src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
+
+
+class BoardCycle8(unittest.TestCase):
+    """Board cycle 8 (17 Nov 2026): the conviction holding's concentration is stated once, as a fact."""
+
+    def test_portfolio_hides_pipeline_trim_notes_on_a_kept_holding(self):
+        with open(os.path.join(HERE, "..", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn("kx.dec&&kx.dec.keeps", html)
+        self.assertIn("kx.results.conviction.positions", html)
+        self.assertIn("(t.concentration_flags||[]).forEach(function(x){if(onKeep(x))return;", html)
+        self.assertIn("(t.trim_considerations||[]).forEach(function(c){if(onKeep(c.ticker)||onKeep(c.note))return;", html)

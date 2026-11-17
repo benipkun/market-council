@@ -237,12 +237,22 @@ def behaviour_facts(ts):
     return out
 
 
+def short_reason(reason, limit=40):
+    # board I27 (cycle 7): the first sentence must answer in at most 40 words; the full reason, word for word as on
+    # TODAY, stays in "why". Drops the bracketed explanation and keeps the first clause.
+    r = re.sub(r"\s*\([^()]*\)", "", str(reason or "")).split("; ")[0].strip().rstrip(".")
+    words = r.split()
+    if len(words) > limit:
+        r = " ".join(words[:limit]).split(", ")[0] if ", " in " ".join(words[:limit]) else " ".join(words[:limit])
+    return r + "."
+
+
 def topic_answer(q, facts):
     # questions that are not about what to buy or sell, answered from the computed figures
     s = q.lower()
     fin = (rj("state/actions.json", {}) or {}).get("final") or {}
     if fin.get("text") and re.search(r"what (should|do|shall) i do|what to do", s) and not re.search(r"\d", s):
-        return {"answer": fin["text"].split("\n")[0] + (": " + fin["reason"] if fin.get("reason") else ""), "lines": (fin.get("lines") or []) + (fin.get("dropped") or []),
+        return {"answer": fin["text"].split("\n")[0] + (": " + short_reason(fin["reason"]) if fin.get("reason") else ""), "lines": (fin.get("lines") or []) + (fin.get("dropped") or []),
                 "why": fin.get("lines") or [fin.get("reason") or ""], "would_change": "A new run of the decision engine (three times each weekday).",
                 "evidence": "The same answer as the top of TODAY, the brief and the phone message."}
     bf = facts.get("behaviour") or {}
@@ -325,14 +335,15 @@ def topic_answer(q, facts):
         return {"answer": "No, not a buy now: none of your rules has raised a buy for %s." % t, "why": why, "would_change": "A card for %s that beats the index fund after fees." % t,
                 "evidence": "Your written rules and our own valuation; the checks are unproven so far."}
     if t and t not in held and ("swap" in s or "sell" in s):
-        return {"answer": "You don't hold %s, so there is nothing to swap." % t, "why": ["Your holdings are %s." % ", ".join(sorted(held))],
+        return {"answer": "You don't hold %s, so there is nothing to %s." % (t, "sell" if "sell" in s and "swap" not in s else "swap"), "why": ["Your holdings are %s." % ", ".join(sorted(held))],
                 "would_change": "Buying %s first." % t, "evidence": "Your books."}
     if s.startswith("why") and ("no trade" in s or "nothing" in s or "no buy" in s):
         lines = (facts.get("system_answer") or {}).get("lines") or [""]
         fin = (rj("state/actions.json", {}) or {}).get("final") or {}
         if fin.get("headline", "").startswith("DO NOTHING") and fin.get("reason"):
             # the same reason as the top of TODAY, word for word (board issue I38, 11 Nov 2026)
-            return {"answer": "Because " + fin["reason"][0].lower() + fin["reason"][1:], "why": [fin["reason"]],
+            r = short_reason(fin["reason"])
+            return {"answer": "Because " + r[0].lower() + r[1:], "why": [fin["reason"]],
                     "would_change": "A signal reaching 20 paper ideas at the three-month mark that beat the S&P 500 fund after fees, or at least $100 of free cash for the core fund.",
                     "evidence": "The same answer as the top of TODAY."}
         return {"answer": "Because no idea beats the same money in the index fund after fees right now.", "why": [x.strip() for x in lines[0].replace("HOLD: do nothing today. ", "").split("; ")[:3] if x.strip()],
