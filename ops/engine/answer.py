@@ -130,6 +130,7 @@ def gather(q, conv=None, fresh=True):
          "portfolio_forecast": dict((h, dict((k, r(v.get("p"), 3)) for k, v in (((fc.get("portfolio") or {}).get("h") or {}).get(h) or {}).get("f", {}).items())) for h in ("1m", "1y")),
          "monthly_contribution": (acts.get("inputs") or {}).get("monthly_huf"), "usd_huf": (acts.get("inputs") or {}).get("usd_huf"),
          "partners_bottom_line": st.get("bottom_line"),
+         "results": dict((k, (rj("state/results.json", {}) or {}).get(k)) for k in ("system_line", "own", "conviction_line", "total_line")),
          "behaviour": behaviour_facts(ts),
          "earnings": earnings_facts(ts + [c.get("ticker") for c in ((rj("state/earnings.json", {}) or {}).get("calendar") or [])[:3]]),
          "conversation": conv if conv is not None else history(),
@@ -284,16 +285,33 @@ def topic_answer(q, facts):
             why.append("Your position: %d%% chance of a next-day close under your stop ($%s). %s" % (round(100 * (x["position"].get("p_below_stop") or 0)), x["position"]["stop"], x["position"].get("stop_jump") or ""))
         return {"answer": ans, "why": why, "would_change": "The actual result against consensus and what management says about guidance.",
                 "evidence": "Estimates from past cases, never promises; the record is scored after every call on the EARNINGS screen."}
+    # Ben's standing decision (15 Nov 2026): a kept holding is never argued against and its weight is not repeated in answers
+    kept = set((facts.get("standing_decisions") or {}).keys())
     pf = (facts.get("portfolio_forecast") or {}).get("1y") or {}
     if ("chance" in s or "probab" in s or "likely" in s) and "portfolio" in s and pf.get("port_loss") is not None:
         p = pf["port_loss"]
         return {"answer": "About %d%%: the Forecaster gives %d%% that the portfolio is worth less in a year at today's weights." % (round(100 * p), round(100 * p)),
                 "why": ["The chance of a fall beyond your maximum loss in a year is %d%%." % round(100 * (pf.get("port_max") or 0))] if pf.get("port_max") is not None else ["One year ahead, at today's weights."],
-                "would_change": "A change in the weights, above all the largest holding's share.", "evidence": "A model estimate from price history, not yet scored on your own record."}
+                "would_change": "Market moves, new money, or a change in what you hold.", "evidence": "A model estimate from price history, not yet scored on your own record."}
     if "index" in s and ("beat" in s or "ahead" in s or "behind" in s) and facts.get("partners_bottom_line"):
         line = facts["partners_bottom_line"]
-        return {"answer": ("No: " if "behind" in line else "Yes: ") + line.split(". ")[1].rstrip(".") + "." if ". " in line else line,
-                "why": [line.split(". ")[0] + "."], "would_change": "The next weeks of results; the record is still short.", "evidence": "Real money against the same money in the index fund, from your ledger."}
+        # CLAUDE.md: results are always shown in parts (system picks, your own picks, the conviction holding, then the total)
+        res = facts.get("results") or {}
+        own = res.get("own") or {}
+        parts = [x for x in [res.get("system_line"),
+                             ("Your own picks: %s$%.2f (%+.1f%%); the S&P 500 fund over the same days: %s$%.2f." % (
+                                 "+" if float(own.get("gain") or 0) >= 0 else "-", abs(float(own.get("gain") or 0)), 100 * float(own.get("gain_pct") or 0),
+                                 "+" if float(own.get("fund_gain") or 0) >= 0 else "-", abs(float(own.get("fund_gain") or 0)))) if own.get("gain") is not None else None,
+                             res.get("conviction_line"), res.get("total_line")] if x]
+        sysr, conv = res.get("system_line"), res.get("conviction_line")
+        if sysr and conv:
+            sv = ((rj("state/results.json", {}) or {}).get("system") or {}).get("vs_fund_usd")
+            head = ("System picks: %s the S&P 500 fund by $%.2f after fees; the whole portfolio, with your conviction holding reported on its own, is %s." % (
+                "ahead of" if float(sv) >= 0 else "behind", abs(float(sv)), line.split(". ")[1].rstrip(".").replace("That is ", "")) if sv is not None and ". " in line else None)
+        else:
+            head = None
+        return {"answer": head or (("No: " if "behind" in line else "Yes: ") + line.split(". ")[1].rstrip(".") + "." if ". " in line else line),
+                "why": (parts + ["All together: " + line.split(". ")[0][0].lower() + line.split(". ")[0][1:] + "."]) if parts else [line.split(". ")[0] + "."], "would_change": "The next weeks of results; the record is still short.", "evidence": "Real money against the same money in the index fund, from your ledger."}
     books = facts.get("books") or {}
     held = dict((p.get("ticker"), p) for p in books.get("positions") or [])
     nav, cash = float(books.get("value") or 0), float(books.get("cash") or 0)
@@ -303,6 +321,15 @@ def topic_answer(q, facts):
     if t in held and pct_m and any(w in s for w in ("fall", "drop", "down", "crash", "lose")):
         x, pos = float(pct_m.group(1)) / 100.0, held[t]
         loss = float(pos.get("value") or 0) * x
+        if t in kept:
+            k = (facts.get("standing_decisions") or {}).get(t) or {}
+            floor = next((p.get("stop") for p in facts.get("order_plans") or [] if p.get("ticker") == t), None)
+            return {"answer": "You would lose about $%.2f, %.1f%% of your portfolio." % (loss, 100 * loss / nav if nav else 0),
+                    "why": ["%s is worth $%.2f; %d%% of that is $%.2f." % (t, float(pos.get("value") or 0), round(100 * x), loss),
+                            "Your portfolio would go from $%.2f to $%.2f." % (nav, nav - loss)],
+                    "would_change": "Nothing in your plan: you keep %s%s%s." % (t, (" until your review date of %s" % k.get("by")) if k.get("by") else "",
+                                                                             ("; an alert comes only if it falls below your maximum-loss line of $%.2f" % float(floor)) if floor else ""),
+                    "evidence": "Arithmetic on your books at the last price."}
         return {"answer": "You would lose about $%.2f, %.1f%% of your portfolio." % (loss, 100 * loss / nav if nav else 0),
                 "why": ["%s is worth $%.2f, %d%% of the portfolio; %d%% of that is $%.2f." % (t, float(pos.get("value") or 0), round(100 * (pos.get("weight") or 0)), round(100 * x), loss),
                         "Your portfolio would go from $%.2f to $%.2f." % (nav, nav - loss)],
@@ -335,7 +362,14 @@ def topic_answer(q, facts):
         return {"answer": "No, not a buy now: none of your rules has raised a buy for %s." % t, "why": why, "would_change": "A card for %s that beats the index fund after fees." % t,
                 "evidence": "Your written rules and our own valuation; the checks are unproven so far."}
     if t and t not in held and ("swap" in s or "sell" in s):
-        return {"answer": "You don't hold %s, so there is nothing to %s." % (t, "sell" if "sell" in s and "swap" not in s else "swap"), "why": ["Your holdings are %s." % ", ".join(sorted(held))],
+        # board cycle 9 (I27): name the share's last close when the records have it, so the answer carries a real number
+        px = ((facts.get("prices") or {}).get(t) or {})
+        why = ["Your holdings are %s." % ", ".join(sorted(held))]
+        if px.get("close") is not None:
+            why.append("%s last closed at $%.2f%s." % (t, float(px["close"]), (" on %s" % px["close_date"]) if px.get("close_date") else ""))
+        else:
+            why.append("You hold %d different shares and $%.2f in cash; none of it is %s." % (len(held), cash, t))
+        return {"answer": "You don't hold %s, so there is nothing to %s." % (t, "sell" if "sell" in s and "swap" not in s else "swap"), "why": why,
                 "would_change": "Buying %s first." % t, "evidence": "Your books."}
     if s.startswith("why") and ("no trade" in s or "nothing" in s or "no buy" in s):
         lines = (facts.get("system_answer") or {}).get("lines") or [""]
@@ -349,7 +383,13 @@ def topic_answer(q, facts):
         return {"answer": "Because no idea beats the same money in the index fund after fees right now.", "why": [x.strip() for x in lines[0].replace("HOLD: do nothing today. ", "").split("; ")[:3] if x.strip()],
                 "would_change": "An idea whose expected result after fees beats the index fund.", "evidence": "The action list's own rule; the checks behind ideas are unproven so far."}
     if "risk" in s:
-        pos = sorted((facts.get("books") or {}).get("positions") or [], key=lambda x: -(x.get("weight") or 0))
+        # the conviction holding is kept by Ben's choice: its weight is stated once, on PORTFOLIO, so the answer ranks the rest
+        pos = sorted([p for p in (facts.get("books") or {}).get("positions") or [] if p.get("ticker") not in kept], key=lambda x: -(x.get("weight") or 0))
+        if pos and pos[0].get("weight") is not None and kept & set(p.get("ticker") for p in (facts.get("books") or {}).get("positions") or []):
+            top = pos[0]
+            return {"answer": "Outside your conviction holding (kept by your choice; see PORTFOLIO), your largest risk is %s at %d%% of the portfolio." % (top["ticker"], round(100 * top["weight"])),
+                    "why": ["It is %d%% of your money in one share." % round(100 * top["weight"])], "would_change": "A price move in %s, or new money added elsewhere." % top["ticker"],
+                    "evidence": "Arithmetic on your books."}
         if pos and pos[0].get("weight") is not None:
             top = pos[0]
             return {"answer": "Your biggest risk is %s at %d%% of the portfolio, against your limit of %d%%." % (top["ticker"], round(100 * top["weight"]), round(100 * float(((facts.get("risk_profile") or {}).get("limits") or {}).get("stock_cap") or 0.3))),

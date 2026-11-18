@@ -461,13 +461,11 @@ def hold_keep(t, ctx):
         (" (" + "; ".join(extra) + ")") if extra else "")
     if not LIVE_PROVEN:
         a["line"] += " (unproven live)"
+    # board cycle 9 (I49): Ben's standing decision of 15 Nov 2026 shows the conviction holding's weight once, on PORTFOLIO;
+    # the line here (also read by the answers) keeps only the alert that applies to it
     eff = []
-    if pfk.get("share") and pfk.get("cap"):
-        eff.append("it is %d%% of the portfolio against your %d%% limit" % (round(100 * pfk["share"]), round(100 * pfk["cap"])))
-    if pfk.get("bad_as_held") is not None and pfk.get("bad_at_cap") is not None:
-        eff.append("bad year %.1f%% as held, %.1f%% if it were at the limit" % (100 * pfk["bad_as_held"], 100 * pfk["bad_at_cap"]))
     if floor:
-        eff.append("your rules raise a sell card only below $%s (maximum-loss line)" % money(floor))
+        eff.append("the only alert is below $%s (your maximum-loss line); it reports the fact and asks nothing" % money(floor))
     a["effect"] = "Measured effect of keeping it: " + "; ".join(eff) + "." if eff else None
     return a
 
@@ -724,6 +722,10 @@ def today(ctx):
         h = ctx["hold"].get(t)
         tp = pl.get("take_profit")
         if not h or t in ctx["keeps"] or not tp or not h.get("price") or float(h["price"]) < float(tp) or t in [a.get("ticker") for a in acts if a["type"] == "SELL"]:
+            continue
+        # board cycle 9 (I56): plans.py sets a holding's take-profit at price + 2 x (price - stop), so the price "reaches" it only
+        # when it is at or below the stop. That is a loss, not a take-profit: no "take-profit reached" line then.
+        if pl.get("stop") is not None and float(tp) <= float(pl["stop"]):
             continue
         sn = sell_numbers(t, ctx)
         a = {"type": "SELL", "ticker": t, "key": "TP:" + t, "take_profit": True, "flags": ["take-profit reached"],

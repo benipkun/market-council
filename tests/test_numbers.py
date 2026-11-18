@@ -856,6 +856,11 @@ class TakeProfitSell(unittest.TestCase):
         self.assertTrue(tp[0]["shares"] > 0 and tp[0]["fees"] >= 1.0)
         self.assertFalse(any(a.get("ticker") == "KEEP" and a["type"] == "SELL" for a in acts))
 
+    def test_a_take_profit_at_or_below_the_stop_is_never_reached(self):
+        # board cycle 9 (I56): a price that fell under a kept stop makes price + 2 x (price - stop) fall under the price
+        c = Actions.ctx(Actions(), plans={"OLD": {"take_profit": 15.0, "stop": 18.0}})
+        self.assertFalse(any(str(a.get("key")).startswith("TP:") for a in A.today(c)[0]))
+
     def test_not_reached_no_sell(self):
         c = Actions.ctx(Actions(), plans={"OLD": {"take_profit": 25.0}})
         self.assertFalse(any(str(a.get("key")).startswith("TP:") for a in A.today(c)[0]))
@@ -1407,3 +1412,55 @@ class BoardCycle8(unittest.TestCase):
         self.assertIn("kx.results.conviction.positions", html)
         self.assertIn("(t.concentration_flags||[]).forEach(function(x){if(onKeep(x))return;", html)
         self.assertIn("(t.trim_considerations||[]).forEach(function(c){if(onKeep(c.ticker)||onKeep(c.note))return;", html)
+
+
+class BoardCycle9(unittest.TestCase):
+    """Board cycle 9 (18 Nov 2026): no answer argues against the conviction holding or repeats its weight; results in parts."""
+
+    def facts(self):
+        return {"question": "", "standing_decisions": {"KEEP": {"target": 80.0, "by": "2027-10-05"}},
+                "books": {"value": 1000.0, "cash": 100.0, "positions": [{"ticker": "KEEP", "value": 450.0, "weight": 0.45, "price": 70.0},
+                                                                        {"ticker": "XYZ", "value": 100.0, "weight": 0.10, "price": 60.0}]},
+                "risk_profile": {"limits": {"stock_cap": 0.3}}, "order_plans": [{"ticker": "KEEP", "stop": 50.0}],
+                "portfolio_forecast": {"1y": {"port_loss": 0.5, "port_max": 0.1}},
+                "partners_bottom_line": "Since 2026-01-01 the portfolio has lost $10.00; the same money in the index fund would have lost $30.00. "
+                                        "That is $20.00 ahead of the index fund, before running costs of $5.00 a month.",
+                "results": {"system_line": "System picks: +$4.00 after recorded fees.", "own": {"gain": -1.00, "gain_pct": -0.01, "fund_gain": -3.00},
+                            "conviction_line": "KEEP (conviction holding, kept by your choice): -$5.00 (-1.0%).", "total_line": "Total is down because of KEEP."}}
+
+    def text(self, r):
+        return " ".join([r["answer"]] + r["why"] + [r["would_change"]])
+
+    def test_no_answer_suggests_selling_or_repeats_the_weight_of_a_kept_holding(self):
+        import answer as AN
+        for q in ("What is my biggest risk right now?", "What happens if KEEP falls 20%?", "What's the chance my portfolio is down this year?"):
+            r = AN.topic_answer(q, self.facts())
+            self.assertIsNotNone(r, q)
+            t = self.text(r)
+            self.assertNotIn("Selling part", t, q)
+            self.assertNotIn("45%", t, q)
+            self.assertNotIn("largest holding", t, q)
+        self.assertIn("XYZ", AN.topic_answer("What is my biggest risk right now?", self.facts())["answer"])
+
+    def test_the_kept_line_has_no_weight_and_asks_nothing(self):
+        a = A.hold_keep("KEEP", Actions.ctx(Actions()))
+        self.assertNotIn("limit", a.get("effect") or "")
+        self.assertNotIn("sell card", a.get("effect") or "")
+
+    def test_beating_the_index_answer_shows_the_parts(self):
+        import answer as AN
+        t = self.text(AN.topic_answer("Am I beating the index fund?", self.facts()))
+        for part in ("System picks", "Your own picks", "conviction holding", "Total is down because of KEEP"):
+            self.assertIn(part, t)
+
+    def test_a_not_held_answer_names_the_last_close(self):
+        import answer as AN
+        f = dict(self.facts(), prices={"ABC": {"close": 12.34, "close_date": "2026-01-02"}})
+        r = AN.topic_answer("Should I sell ABC?", f)
+        self.assertTrue(r["answer"].startswith("You don't hold ABC"))
+        self.assertIn("$12.34", " ".join(r["why"]))
+
+    def test_review_hides_an_advisor_question_on_a_kept_holding(self):
+        with open(os.path.join(HERE, "..", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn("a.questions.length&&!onKeepQ(p,a)", html)

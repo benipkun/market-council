@@ -1413,8 +1413,11 @@ parts.push('<div class="arow"><span class="aw">'+esc(shortDate(e.at))+'</span><d
 });
 $("week").innerHTML=parts.join("");
 var q=null;
+/* board cycle 9 (I49): an Advisor question on the conviction holding (kept by Ben's choice, 15 Nov 2026) is never shown */
+var kq=window.MCX&&window.MCX.X||{},keepQ=Object.keys((kq.dec&&kq.dec.keeps)||{}).concat(((kq.results&&kq.results.conviction&&kq.results.conviction.positions)||[]).map(function(p){return p.ticker;}));
+function onKeepQ(p,a){var tx=(a.questions||[]).join(" ")+" "+(a.framing||"");return keepQ.some(function(k){return k&&(p.ticker===k||new RegExp("\\b"+k+"\\b").test(tx));});}
 (((S.history&&S.history.entries)||[]).slice().reverse()).some(function(e){
-return (e.picks||[]).some(function(p){var a=p.advisor_questions;if(a&&a.questions&&a.questions.length){q={p:p,a:a,at:e.as_of};return true;}return false;});
+return (e.picks||[]).some(function(p){var a=p.advisor_questions;if(a&&a.questions&&a.questions.length&&!onKeepQ(p,a)){q={p:p,a:a,at:e.as_of};return true;}return false;});
 });
 $("advq").innerHTML=q?'<b>'+esc(q.p.ticker)+(q.a.framing?" "+DASH+" "+esc(q.a.framing):"")+'</b><div style="margin-top:6px;color:var(--tx)">'+esc(q.a.questions[0])+
 '</div><div class="note gap">Asked '+esc(ago(q.at))+'. Questions, not answers: worth a minute before your next trade.</div>':"No Advisor question recorded yet.";
