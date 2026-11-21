@@ -21,6 +21,7 @@ var pp=[];if(p.largest)pp.push("largest holding after: "+esc(p.largest.t)+" "+pc
 if(p.share!=null&&p.cap!=null)pp.push(pct(p.share)+" of the portfolio against your "+pct(p.cap)+" limit");if(p.bad_year_at_cap!=null)pp.push("bad year "+(100*p.bad_year).toFixed(1)+"% as held, "+(100*p.bad_year_at_cap).toFixed(1)+"% at the limit");
 if(p.bad_year_if_sold!=null)pp.push("bad year if sold "+(100*p.bad_year_if_sold).toFixed(1)+"%");if(pp.length&&!a.decision)s.push("Portfolio: "+pp.join(" "+DOT+" "));
 if(e.text)s.push("Evidence: "+esc(e.text));
+if(a.drivers&&a.drivers.length)s.push("Why this card (from the company file): "+a.drivers.map(function(d,i){var u=d.url||"";var h=/^https?:/.test(u)?u:"https://github.com/benipkun/market-council-state/blob/main/"+u;return (i+1)+". "+(u?'<a href="'+esc(h)+'" target="_blank" rel="noopener">'+esc(d.text)+'</a>':esc(d.text));}).join(" "));
 (a.disagree||[]).forEach(function(d){s.push('<span style="color:var(--wn)">The parts disagree: '+esc(d)+'</span>');});
 if(a.effect)s.push(esc(a.effect));(a.closest||[]).forEach(function(c){s.push("Closest idea: "+esc(c));});if(a.valid_until)s.push("Card valid until "+esc(a.valid_until)+". "+esc(a.exit_rule||""));
 var flags=(a.flags||[]).map(function(x){return '<span class="stg '+(x==="unproven"?"stale":"paper")+'" style="margin-left:6px">'+esc(x.toUpperCase())+'</span>';}).join("");

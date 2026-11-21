@@ -93,6 +93,23 @@ def history(n=3):
     return out[-n:]
 
 
+def file_facts(ts):
+    """The company files (state/files/<T>.json, 21 Nov 2026): the Advisor answers from them and quotes their date;
+    a company with no file is named, so the reply says the files do not cover it."""
+    out = {}
+    for t in [x for x in ts if x]:
+        f = rj("state/files/%s.json" % t)
+        if not f:
+            out[t] = {"no_file": "The company files do not cover %s yet." % t}
+            continue
+        out[t] = {"quote_as": "from the file, updated %s" % str(f.get("updated"))[:10], "business": (f.get("business") or {}).get("text"),
+                  "numbers_trend": (f.get("numbers") or {}).get("trend"), "valuation": (f.get("valuation") or {}).get("ours"),
+                  "analysts": (f.get("valuation") or {}).get("analysts"), "record": ((f.get("management") or {}).get("record") or {}).get("text"),
+                  "bull": (f.get("bull") or {}).get("text"), "bear": (f.get("bear") or {}).get("items"), "would_change": (f.get("would_change") or {}).get("text"),
+                  "dates": f.get("dates"), "news": (f.get("news") or [])[:5], "missing": f.get("missing"), "standing": f.get("standing")}
+    return out
+
+
 def gather(q, conv=None, fresh=True):
     snap, dec = rj("treasury/snapshot.json", {}) or {}, rj("state/decisions.json", {}) or {}
     acts, plans = rj("state/actions.json", {}) or {}, rj("state/plans.json", {}) or {}
@@ -133,6 +150,8 @@ def gather(q, conv=None, fresh=True):
          "results": dict((k, (rj("state/results.json", {}) or {}).get(k)) for k in ("system_line", "own", "conviction_line", "total_line")),
          "behaviour": behaviour_facts(ts),
          "earnings": earnings_facts(ts + [c.get("ticker") for c in ((rj("state/earnings.json", {}) or {}).get("calendar") or [])[:3]]),
+         "company_files": file_facts([named] if named else held[:3]),
+         "news_that_matters": [dict((k, x.get(k)) for k in ("ticker", "title", "type", "money", "past", "thesis", "first_seen")) for x in ((rj("state/news/today.json", {}) or {}).get("items") or [])],
          "conversation": conv if conv is not None else history(),
          "missing": [x for x in ["news: the hourly news reader has been offline since " + str((rj("digests/latest.json", {}) or {}).get("as_of"))[:10]
                                  if (rj("digests/latest.json", {}) or {}).get("as_of", "") < (datetime.date.today() - datetime.timedelta(days=2)).isoformat() else None] if x]}
@@ -251,6 +270,24 @@ def short_reason(reason, limit=40):
 def topic_answer(q, facts):
     # questions that are not about what to buy or sell, answered from the computed figures
     s = q.lower()
+    cf = facts.get("company_files") or {}
+    ft = next((w.upper() for w in re.findall(r"[A-Za-z]{2,6}", q) if w.upper() in cf), None)
+    if ft and re.search(r"\b(file|business|what does|how does|make money|segment|competit|bull|bear|thesis|valuation|worth|news|analyst|management|ceo)", s):
+        x = cf[ft]
+        if x.get("no_file"):
+            return {"answer": x["no_file"], "why": ["The Advisor answers company questions only from the files, so it does not guess."], "would_change": "A file is built when the company is held, watched or among the best five ideas.", "evidence": "No file."}
+        want = [k for k in ("segments", "competitors", "drivers", "management", "bull case") if k.split()[0][:6] in s]
+        gap = [k for k in want if k in (x.get("missing") or [])]
+        v = x.get("valuation") or {}
+        why = [p for p in [
+            ("Business: %s" % x["business"]) if x.get("business") else None,
+            ("Numbers: %s." % x["numbers_trend"]) if x.get("numbers_trend") else None,
+            ("Our cash-flow value $%.2f (range $%.2f to $%.2f, %s); an estimate." % (v["base"], v.get("low") or 0, v.get("high") or 0, v.get("main_assumption"))) if v.get("base") else None,
+            x.get("record"),
+            ("Latest important news: %s (%s, thesis %s)." % (x["news"][0]["title"], x["news"][0]["first_seen"][:10], x["news"][0].get("thesis") or "not checked")) if x.get("news") else None] if p][:4]
+        return {"answer": ("%s, %s: the files do not cover %s yet; the committee's next memo adds it." % (ft, x["quote_as"], ", ".join(gap))) if gap else ("%s, %s:" % (ft, x["quote_as"])) + (" " + why[0] if why else " the file holds no narrative yet."),
+                "why": why[1:] if not gap else why, "would_change": str(x.get("would_change") or "A new filing, results or an important news item updates the file."),
+                "evidence": "From the company file (%s); valuation is our own model's estimate." % x["quote_as"]}
     fin = (rj("state/actions.json", {}) or {}).get("final") or {}
     if fin.get("text") and re.search(r"what (should|do|shall) i do|what to do", s) and not re.search(r"\d", s):
         return {"answer": fin["text"].split("\n")[0] + (": " + short_reason(fin["reason"]) if fin.get("reason") else ""), "lines": (fin.get("lines") or []) + (fin.get("dropped") or []),

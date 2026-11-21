@@ -28,10 +28,10 @@ RF, ERP = 0.0365, 0.05              # risk-free rate and the engine's equity pre
 FEW = 20
 MAX_PER_RUN = 6
 LABEL_OF = {"backtest": "PAPER", "signals": "PAPER", "history": "LIVE", "montecarlo": "LIVE", "doomsday": "PAPER",
-            "options": "SAMPLE", "pairs": "PAPER", "earnings": "LIVE", "learned": "PAPER"}
+            "options": "SAMPLE", "pairs": "PAPER", "earnings": "LIVE", "learned": "PAPER", "events": "LIVE"}
 TITLE = {"backtest": "Backtester", "signals": "Signals lab", "history": "History check", "montecarlo": "Monte Carlo",
          "doomsday": "Doomsday back-test", "options": "Options calculator", "pairs": "Pairs", "earnings": "Earnings reaction",
-         "learned": "Learned signal"}
+         "learned": "Learned signal", "events": "Event study"}
 TICK = re.compile(r"^[A-Z0-9.^=@-]{1,12}$")
 
 
@@ -480,8 +480,32 @@ def t_learned(inp):
                       "zero; each switch costs %.2f%% (Revolut). Compared with 12-month momentum and buy-and-hold on the same months." % (first, 100 * c)}
 
 
+def t_events(inp):
+    """10. Event study (21 Nov 2026): the usual move after each kind of company event, from ops/engine/events.py."""
+    st = E.rj("state/news/event_study.json", {}) or {}
+    types = st.get("types") or {}
+    if not types:
+        raise ValueError("the event study has not run yet (it runs nightly after the back-checks)")
+    h = str(inp.get("days") or "5").strip()
+    h = h if h in ("1", "5", "20") else "5"
+    want = str(inp.get("event") or "all").strip()
+    keys = sorted(types, key=lambda k: -((types[k].get(h + "d") or {}).get("n") or 0)) if want == "all" else [k for k in types if k == want]
+    if not keys:
+        raise ValueError("no event type called %s" % want)
+    tab = [["Event", "Cases", "Typical move", "Range (10th to 90th)", "Rose"]]
+    for k in keys:
+        x = types[k].get(h + "d") or {}
+        if x.get("n"):
+            tab.append([types[k].get("name", k), x["n"], E.pc(x["median"]), "%s to %s" % (E.pc(x["p10"]), E.pc(x["p90"])), E.pc(x["up"], 0)])
+    top = types[keys[0]].get(h + "d") or {}
+    return {"cases": top.get("n"), "case_word": "past events", "data_through": str(st.get("as_of"))[:10], "data_age_days": 0,
+            "headline": "%s: over %s trading days the typical move against the S&P 500 fund was %s, range %s to %s, %s cases since %s." % (
+                types[keys[0]].get("name", keys[0]), h, E.pc(top.get("median") or 0), E.pc(top.get("p10") or 0), E.pc(top.get("p90") or 0), "{:,}".format(top.get("n") or 0), st.get("since")),
+            "table": tab, "not_measurable": st.get("not_measurable"), "method": st.get("method")}
+
+
 TOOLS = {"backtest": t_backtest, "signals": t_signals, "history": t_history, "montecarlo": t_montecarlo, "doomsday": t_doomsday,
-         "options": t_options, "pairs": t_pairs, "earnings": t_earnings, "learned": t_learned}
+         "options": t_options, "pairs": t_pairs, "earnings": t_earnings, "learned": t_learned, "events": t_events}
 
 
 def run_one(req):

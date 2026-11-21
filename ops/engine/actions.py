@@ -22,6 +22,10 @@ questions:
 Standard library only, so the routine can run it without the engine's other parts."""
 import datetime
 import glob
+try:
+    import files as NF
+except Exception:
+    NF = None
 import json
 import math
 import os
@@ -663,6 +667,20 @@ def act_ticker(a):
     return (a.get("buy") or {}).get("ticker") or a.get("ticker")
 
 
+def news_books(acts, ctx):
+    """The ideas bought with the news side and without it, for the paper comparison (files.books); also each BUY's three drivers."""
+    buys = [a["ticker"] for a in acts if a.get("type") == "BUY" and a.get("ticker")]
+    for a in acts:
+        if a.get("type") == "BUY" and NF and not a.get("drivers"):
+            try:
+                a["drivers"] = NF.drivers(a["ticker"])
+            except Exception:
+                a["drivers"] = []
+    blocked = ctx.get("news_blocked") or []
+    return {"with": buys, "without": (blocked + buys)[:max(1, len(buys))] if (blocked or buys) else [],
+            "note": "Without = what the list would have bought had the news side not held any share back (the held-back shares take the first places)."}
+
+
 def today(ctx):
     cands = candidates(ctx)
     fb = ctx.get("feedback") or {}
@@ -672,6 +690,14 @@ def today(ctx):
     good = sorted([x for x in cands if qualifies(x) and (fb.get(x["t"]) or {}).get("choice") != "reject"], key=rank)
     good = [x for x in good if (fb.get(x["t"]) or {}).get("choice") != "later"] + [x for x in good if (fb.get(x["t"]) or {}).get("choice") == "later"]
     acts, cash, used, sold = [], ctx["free_cash"], {}, set()
+    # the news desk (21 Nov 2026): a share whose thesis news weakened in the last 7 days is held back; the "without" paper book ignores this
+    ctx["news_blocked"] = []
+    for x in good:
+        nb = NF.news_block_for(x["t"]) if NF else None
+        if nb:
+            x["skip_reason"] = "the news side holds it back: " + nb
+            ctx["news_blocked"].append(x["t"])
+    good = [x for x in good if x["t"] not in ctx["news_blocked"]]
     for x in good:
         sp = ctx.get("split") or {}
         if sp.get("over"):
@@ -1232,6 +1258,7 @@ def run(now=None, dec=None, spy_price=None):
                       "stock_cap": ctx["limits"].get("stock_cap"), "min_cash": ctx["limits"].get("min_cash"), "spy": ctx["spy"], "keeps": sorted(ctx["keeps"]),
                       "index_mu": r2(ctx["index_mu"], 4)},
            "candidates": [dict((k, v) for k, v in x.items()) for x in cands],
+           "news_books": news_books(acts, ctx),
            "method": method_text(ctx["index_mu"]),
            "foot": FOOT}
     with open(os.path.join(ROOT, "state", "actions.json"), "w", encoding="utf-8") as f:

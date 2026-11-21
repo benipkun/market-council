@@ -57,6 +57,9 @@ jobs:
         run: |
           mkdir -p state/logs
           if python ops/engine/history.py > /tmp/history.txt 2>&1; then echo "history: ok"; else echo "history: FAILED (details in the private records, state/logs/history.txt)"; echo history >> /tmp/failed; fi
+          # the event study (21 Nov 2026): every 8-K of the shares above against the S&P 500 fund, from the same price files
+          if python ops/engine/events.py > /tmp/events.txt 2>&1; then echo "events: ok"; else echo "events: FAILED (details in the private records, state/logs/events.txt)"; echo events >> /tmp/failed; fi
+          { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/events.txt; } > state/logs/events.txt
           { date -u +%Y-%m-%dT%H:%MZ; cat /tmp/history.txt; } > state/logs/history.txt
       # Keep whatever history was fetched even if a later step fails, so the next run does not start from nothing.
       - name: Save the history

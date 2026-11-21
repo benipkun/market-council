@@ -75,8 +75,10 @@ def companies():
     held = [p["ticker"] for p in snap.get("positions") or [] if p.get("ticker")]
     watch = [str(x.get("ticker") if isinstance(x, dict) else x) for x in (rj("state/known_companies.json", {}) or {}).get("tickers") or []]
     ideas = [c.get("ticker") for c in (rj("state/decisions.json", {}) or {}).get("cards") or [] if c.get("status") == "open" and c.get("kind") == "idea" and c.get("ticker")]
+    # the best five new ideas get full files too (21 Nov 2026), so a buy rests on a research report
+    best = [c.get("t") for c in ((rj("state/actions.json", {}) or {}).get("candidates") or [])[:5]]
     out = []
-    for t in held + watch + ideas:
+    for t in held + watch + ideas + best:
         if t and t not in out and t not in ("SPY", "VOO", "IVV", "portfolio"):
             out.append(t)
     return out, set(held)
@@ -118,8 +120,11 @@ def packs(now=None):
                 why = "the last memo is over %d days old" % STALE_DAYS
             elif cal.get(t) and d < str(cal[t]) <= today:
                 why = "results came out since the last memo"
+        fdue = [d for d in (rj("state/files/due.json", {}) or {}).get("due") or [] if d.get("ticker") == t]
+        if not why and fdue and last:
+            why = "event since the last memo: " + fdue[0]["why"]
         if why:
-            queue.append({"ticker": t, "why": why, "held": t in held})
+            queue.append({"ticker": t, "why": why, "held": t in held, "file": "state/files/%s.json" % t})
     queue.sort(key=lambda x: (not x["held"], x["ticker"]))
     wj("state/memos/queue.json", {"as_of": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "due": queue, "per_run": 2,
                                   "rule": "A memo is due when a company has none, its last one is over %d days old, or results came out since. Holdings first; at most two a run." % STALE_DAYS})

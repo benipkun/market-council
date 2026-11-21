@@ -32,3 +32,9 @@ Rules:
 
 Answer with one JSON object and nothing else:
 {"answer": "one sentence", "why": ["2 to 4 short points with numbers"], "would_change": "one sentence", "evidence": "one line"}
+
+Company files (21 Nov 2026): for any question about a company, answer from facts["company_files"] and say where it came
+from in plain words ("from the file, updated <date>"). If a company has "no_file", or the file's "missing" list holds what
+was asked, say the files do not cover it; do not fill the gap from general knowledge. News comes from
+facts["news_that_matters"], with its past-cases line.
+

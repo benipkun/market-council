@@ -1398,6 +1398,50 @@ class BoardCycle7(unittest.TestCase):
         self.assertIn('lim["risk_per_trade"] = min(0.03, max(0.0025, float(prof["risk_per_trade"])))', src)
 
 
+class NewsDesk(unittest.TestCase):
+    """21 Nov 2026: the news pipeline, the event study and the three books are plain code; their numbers are checked here."""
+
+    def test_event_study_summary_counts_cases_and_percentiles(self):
+        import events as EV
+        s = EV.summary([0.01 * i for i in range(-10, 11)])
+        self.assertEqual(s["n"], 21)
+        self.assertAlmostEqual(s["median"], 0.0)
+        self.assertAlmostEqual(s["p10"], -0.08)
+        self.assertAlmostEqual(s["p90"], 0.08)
+        self.assertFalse(s["few"])
+        self.assertTrue(EV.summary([0.1, 0.2])["few"])
+
+    def test_event_study_counts_from_the_close_before_the_news(self):
+        import events as EV
+        px = [("2026-01-0%d" % d, p) for d, p in ((2, 100.0), (5, 110.0), (6, 121.0))]
+        spy = [(d, 100.0) for d, _ in px]
+        self.assertAlmostEqual(EV.moves(px, spy, "2026-01-05", False)[1], 0.10)     # before the open: from the 2 Jan close
+        self.assertAlmostEqual(EV.moves(px, spy, "2026-01-05", True)[1], 0.10)      # after the close: from the 5 Jan close
+
+    def test_8k_items_sort_into_event_types(self):
+        import news as N
+        self.assertEqual(N.classify({"source": "sec", "form": "8-K", "items": ["2.02", "9.01"]})[0], "earnings")
+        self.assertEqual(N.classify({"source": "sec", "form": "8-K", "items": ["4.02"]})[0], "legal")
+        self.assertEqual(N.classify({"source": "wire", "title": "Acme to acquire Widgets in $2 billion deal"})[0], "M&A")
+        self.assertEqual(N.classify({"source": "wire", "title": "Stocks settle mostly lower"})[1], "unsorted")
+        self.assertEqual(N.tone({"source": "sec", "items": ["1.03"]}), -1.0)
+
+    def test_duplicates_are_removed_and_tickers_merged(self):
+        import news as N
+        a = {"source": "opinion", "tickers": ["PFE"], "title": "Can new products revive Pfizer?"}
+        b = {"source": "opinion", "tickers": ["NVO"], "title": "Can new products revive Pfizer?"}
+        c = {"source": "opinion", "tickers": ["PFE"], "title": "Can new products revive Pfizer growth?"}
+        out, dups = N.dedupe([a, b, c], {})
+        self.assertEqual(dups, 2)
+        self.assertEqual(out[0]["tickers"], ["PFE", "NVO"])
+        self.assertEqual(out[1].get("dup_of"), out[0]["id"])
+
+    def test_books_fee_is_quarter_percent_with_a_dollar_minimum(self):
+        import files as FI
+        self.assertEqual(FI.fee(100.0), 1.0)
+        self.assertAlmostEqual(FI.fee(1000.0), 2.5)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
 

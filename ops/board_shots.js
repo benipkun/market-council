@@ -1,4 +1,4 @@
-// screenshot tour (16 Nov 2026: QUANT LAB, SETTINGS, and the four ways into the target split)
+// screenshot tour (21 Nov 2026: the news desk on TODAY, RESEARCH > FILES with one company file opened)
 // Phone-size screenshots of every screen of the live app, for the review board (ops/BOARD.md in the records).
 // The app reads the private records with the records token, given to the page the same way the owner's phone
 // does (local storage). The pictures contain private figures: they are written to a folder that the job
@@ -9,7 +9,7 @@ const path = require("path");
 
 const URL = "https://benipkun.github.io/market-council/";
 const TABS = ["today", "memos", "learn", "brief", "portfolio", "map", "risk", "plans", "log", "research", "watch", "quant", "council",
-  "strategy", "checks", "forecasts", "record", "partners", "system", "review", "guide", "board", "earnings", "behaviour", "qlab", "settings"];
+  "strategy", "checks", "forecasts", "record", "partners", "system", "review", "guide", "board", "earnings", "behaviour", "qlab", "settings", "files"];
 
 (async () => {
   const out = process.argv[2] || "/tmp/shots";
@@ -75,6 +75,20 @@ const TABS = ["today", "memos", "learn", "brief", "portfolio", "map", "risk", "p
     }
   }
   report.push({ tab: "ways_into_split", ways });
+  // the news desk proof (21 Nov 2026): TODAY's news block alone, and one company file opened
+  try {
+    await page.goto(URL + "#today", { waitUntil: "load", timeout: 60000 });
+    await page.waitForTimeout(7000);
+    const box = await page.evaluate(() => { const b = [...document.querySelectorAll(".blk, section.view:not([hidden]) > div")].find((d) => /NEWS THAT MATTERS/.test(d.innerText || "")); if (!b) return null; const r = b.getBoundingClientRect(); return { y: r.top + window.scrollY, h: r.height }; });
+    if (box) await page.screenshot({ path: path.join(out, "today-news.png"), fullPage: true, clip: { x: 0, y: Math.max(0, box.y - 4), width: 390, height: Math.min(1600, box.h + 8) } });
+    await page.goto(URL + "#files", { waitUntil: "load", timeout: 60000 });
+    await page.waitForTimeout(7000);
+    const pick = await page.evaluate(() => { const f = document.querySelector('[data-p25f="ADP"]') || document.querySelector("[data-p25f]"); if (f) f.click(); return f ? f.getAttribute("data-p25f") : null; });
+    await page.waitForTimeout(4000);
+    const fh = await page.evaluate(() => document.documentElement.scrollHeight);
+    if (pick) await page.screenshot({ path: path.join(out, "files-open.png"), fullPage: true, clip: { x: 0, y: 0, width: 390, height: Math.min(fh, 9000) } });
+    report.push({ tab: "news_proof", today_news: !!box, file: pick });
+  } catch (e) { report.push({ tab: "news_proof", error: String(e.message || e).slice(0, 120) }); }
   fs.writeFileSync(path.join(out, "report.json"), JSON.stringify({ at: new Date().toISOString(), viewport: "390x844", shots: report, page_errors: errors }, null, 1));
   await browser.close();
   console.log("screens: " + n + " of " + TABS.length + ", page errors: " + errors.length);

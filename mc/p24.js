@@ -28,7 +28,9 @@ var T=[
  {id:"earnings",n:"8",name:"Earnings reaction",what:"The usual move after results, and how the crowd reacts to a beat or a miss.",before:"Built before: the EARNINGS screen for coming results. New: any ticker with a saved result history.",
   f:[["ticker","Ticker","UBER"]]},
  {id:"learned",n:"9",name:"Learned signal",what:"A model of next month's return, tested walk-forward. Stays on paper until it beats the simple rules out of sample.",before:"Built before: one pooled model, nightly. New: per ticker, against momentum and holding.",
-  f:[["ticker","Ticker","SPY"],["amount","Order size $","1000"]]}];
+  f:[["ticker","Ticker","SPY"],["amount","Order size $","1000"]]},
+ {id:"events",n:"10",name:"Event study",what:"How shares moved 1, 5 and 20 trading days after each kind of company event, against the S&P 500 fund.",before:"New (21 Nov 2026): every 8-K of the shares the back-checks follow, since 2000.",
+  f:[["event","Event","all",["all","earnings","earnings beat","earnings miss","M&A","management","legal","restructuring","impairment","guidance","new debt","investor presentation","other","macro"]],["days","Trading days","5",["1","5","20"]]]}];
 var css=document.createElement("style");css.textContent=
 ".p24f{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.p24f label{font-size:10.5px;color:var(--dim);display:flex;flex-direction:column;gap:3px;flex:1;min-width:96px}"+
 ".p24f input,.p24f select{background:var(--bg);border:1px solid var(--bd);color:var(--tx);border-radius:3px;padding:8px;font:inherit;font-size:13px;width:100%;box-sizing:border-box}"+
@@ -47,7 +49,7 @@ return '<div class="q gap" style="white-space:normal">'+lab(r.label)+' <b style=
 function loadRun(id){if(runs[id])return;runs[id]={loading:true};MC.get("state/qlab/runs/"+id+".json").then(function(r){runs[id]=r||{status:"failed",headline:"Not found."};paint();});}
 function tool(t){var ix=(M.X.qlab||{}).runs||[],mine=ix.filter(function(r){return r.tool===t.id;}).reverse(),cur=open[t.id]||(mine[0]&&mine[0].id);
 if(cur)loadRun(cur);var r=cur&&runs[cur];
-return M.blk(t.n+". "+t.name.toUpperCase(),lab(t.id==="options"?"SAMPLE":(["history","montecarlo","earnings"].indexOf(t.id)>=0?"LIVE":"PAPER")),
+return M.blk(t.n+". "+t.name.toUpperCase(),lab(t.id==="options"?"SAMPLE":(["history","montecarlo","earnings","events"].indexOf(t.id)>=0?"LIVE":"PAPER")),
 '<div class="src" style="white-space:normal">'+esc(t.what)+'</div><div class="p24f">'+t.f.map(function(f){var v=f[2];
 return '<label>'+esc(f[1])+(f[3]?'<select data-p24i="'+t.id+'.'+f[0]+'">'+f[3].map(function(o){return "<option"+(o===v?" selected":"")+">"+esc(o)+"</option>";}).join("")+"</select>":'<input data-p24i="'+t.id+'.'+f[0]+'" value="'+esc(v)+'">')+"</label>";}).join("")+'</div>'+
 '<button class="btn" data-p24r="'+t.id+'">Run</button> <span class="src">'+esc(note[t.id]||"")+'</span>'+
