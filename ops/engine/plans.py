@@ -88,9 +88,15 @@ def forecast_for(fct, t, stop, tp):
     return {"tp_first": a.get("p"), "stop_first": b.get("p"), "range": [a.get("lo"), a.get("hi")], "cases": a.get("cases"), "few": bool(a.get("few")), "due": plan.get("due")}
 
 
-def revolut_steps(t, shares, limit, stop, tp, until, held, alarm=False):
+def revolut_steps(t, shares, limit, stop, tp, until, held, alarm=False, kept=False):
     n = "%s share%s" % (("%g" % shares), "" if shares == 1 else "s")
     s = []
+    if held and kept:
+        # board cycle 10 (I62): a conviction holding (Ben, 15 Nov 2026) has no stop order and no sell order; its alerts
+        # report the fact and ask nothing
+        s.append("Maximum-loss alert: a price alert for %s at $%.2f tells you it is below the maximum-loss line in your risk profile. No order to place." % (t, stop))
+        s.append("Target alert: a price alert for %s at $%.2f tells you it has reached your target. No order to place." % (t, tp))
+        return s
     if not held:
         s.append("Buy: Revolut > Invest > %s > Buy > Limit order. Limit price $%.2f, %s, expiry %s. Review and confirm." % (t, limit, n, until))
     if alarm and not held:
@@ -156,8 +162,8 @@ def holding_plan(p, hold, keep, label, closes, fct, nav, prev, today, alarm=Fals
             "until": until, "until_why": why_until, "forecast": fc, "expected_after_fees": r2(exp),
             "forecast_note": None if fc else "The Forecaster works out the chances for these levels in its next nightly run.",
             "alarm_only": alarm_on,
-            "revolut": revolut_steps(t, float(math.floor(qty)) if qty >= 1 else qty, price, stop, tp, until, True, alarm_on)}
-    if not float(qty).is_integer():
+            "revolut": revolut_steps(t, float(math.floor(qty)) if qty >= 1 else qty, price, stop, tp, until, True, alarm_on, bool(keep))}
+    if not float(qty).is_integer() and not keep:
         plan["fraction_note"] = ("You hold %g shares. Revolut limit orders take whole shares only, so the orders above cover %d; the remaining %g of a share is sold with a market order "
                                  "when a level is reached. If the app also takes the fraction in the stop order, include it there.") % (qty, math.floor(qty), round(qty - math.floor(qty), 6))
     return plan
@@ -216,17 +222,19 @@ def watch(plans, prev, holds, today):
         t, price = p["ticker"], p["price"]
         if p.get("stop") and price <= p["stop"]:
             events.append({"type": "hit", "id": p["id"], "key": "hit-stop:%s:%s" % (p["id"], p["stop"]),
-                           "text": "%s closed at or under its stop ($%.2f)%s." % (t, p["stop"], ": your rules raise a sell card" if p.get("kept") else ": sell, or write down why you keep it")})
+                           "text": ("%s closed under the maximum-loss line in your risk profile ($%.2f)." % (t, p["stop"])) if p.get("kept") else
+                                   ("%s closed at or under its stop ($%.2f): sell, or write down why you keep it." % (t, p["stop"]))})
         if p.get("take_profit") and price >= p["take_profit"]:
             events.append({"type": "hit", "id": p["id"], "key": "hit-tp:%s:%s" % (p["id"], p["take_profit"]),
-                           "text": "%s reached its take-profit ($%.2f)%s." % (t, p["take_profit"], ": your target, review your decision" if p.get("kept") else (": review the position (an alert, not an order)" if p.get("alarm_only") else ": sell with a limit order, or move the stop up"))})
+                           "text": ("%s reached your target ($%.2f)." % (t, p["take_profit"])) if p.get("kept") else
+                                   ("%s reached its take-profit ($%.2f)%s." % (t, p["take_profit"], ": review the position (an alert, not an order)" if p.get("alarm_only") else ": sell with a limit order, or move the stop up"))})
         avg, first = p.get("average_cost"), p.get("initial_stop")
         if not p.get("kept") and not p.get("alarm_only") and avg and first and avg > first and price >= avg + (avg - first) and p["stop"] < avg:
             events.append({"type": "move", "id": p["id"], "key": "move:%s:%s" % (p["id"], r2(avg)),
                            "text": "Move the stop on %s up to $%.2f, your average cost: it is up by its first risk (trailing rule)." % (t, avg)})
             p["stop_should_be"] = r2(avg)
         if p.get("until") and day(p["until"]) < today:
-            events.append({"type": "time", "id": p["id"], "key": "time:%s:%s" % (p["id"], p["until"]), "text": "%s: the plan's time limit (%s) has passed; review it." % (t, p["until"])})
+            events.append({"type": "time", "id": p["id"], "key": "time:%s:%s" % (p["id"], p["until"]), "text": ("%s: your review date (%s) has arrived." % (t, p["until"])) if p.get("kept") else ("%s: the plan's time limit (%s) has passed; review it." % (t, p["until"]))})
         o = old.get(p["id"]) or {}
         a, b = (p.get("forecast") or {}).get("tp_first"), (o.get("forecast") or {}).get("tp_first")
         if a is not None and b is not None and abs(a - b) > PROB_MOVE:

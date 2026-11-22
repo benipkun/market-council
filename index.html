@@ -816,6 +816,17 @@ return '<div class="kv"><span><b style="color:var(--tx)">'+esc(r.k)+'</b>'+(r.h?
 renderInstall();
 }
 var SHOCK=-20;
+/* board cycle 10 (I63): the conviction holdings (Ben, 15 Nov 2026), or null while the records that name them are still loading */
+function keepsKnown(){var x=window.MCX&&window.MCX.X||{};if(!x.dec&&!x.results)return null;
+return Object.keys((x.dec&&x.dec.keeps)||{}).concat(((x.results&&x.results.conviction&&x.results.conviction.positions)||[]).map(function(p){return p.ticker;}));}
+function pfNotes(t,n){var keepT=keepsKnown(),el=$("pf-notes");if(!el)return;
+if(keepT===null){el.innerHTML="";if((n||0)<30)setTimeout(function(){pfNotes(t,(n||0)+1);},1000);return;}
+function onKeep(s){return keepT.some(function(k){return k&&new RegExp("\\b"+k+"\\b").test(String(s||""));});}
+var notes=[];
+(t.concentration_flags||[]).forEach(function(x){if(onKeep(x))return;notes.push('<div class="msg warn gap">'+esc(x)+'</div>');});
+(t.trim_considerations||[]).forEach(function(c){if(onKeep(c.ticker)||onKeep(c.note))return;notes.push('<div class="msg gap"><b>'+esc(c.ticker)+
+' is '+Number(c.pct_nav).toFixed(1)+'% of total.</b> '+esc(c.note||"")+'</div>');});
+el.innerHTML=notes.join("");}
 function renderPortfolio(){
 var vis=pfVisible();
 $("pf-gate").hidden=vis; $("pf-body").hidden=!vis;
@@ -854,15 +865,10 @@ return '<div class="prow"><div class="prh"><span class="tk">'+esc(p.ticker)+'</s
 '<div class="bar"><i style="width:'+Math.min(100,num(t.cash_pct_of_nav)||0).toFixed(1)+'%;background:var(--dim)"></i></div>'+
 '<div class="pact"><button class="btn sm" data-log="1" data-act="deposit">Deposit</button>'+
 '<button class="btn sm" data-log="1" data-act="withdraw">Withdraw</button></div></div>';
-var notes=[];
 /* board cycle 8: the conviction holding's concentration is shown once, as a fact, by the results block; the pipeline's
-   concentration and trim notes on it are not shown (standing decision of 15 Nov 2026) */
-var kx=window.MCX&&window.MCX.X||{},keepT=Object.keys((kx.dec&&kx.dec.keeps)||{}).concat(((kx.results&&kx.results.conviction&&kx.results.conviction.positions)||[]).map(function(p){return p.ticker;}));
-function onKeep(s){return keepT.some(function(k){return k&&new RegExp("\\b"+k+"\\b").test(String(s||""));});}
-(t.concentration_flags||[]).forEach(function(x){if(onKeep(x))return;notes.push('<div class="msg warn gap">'+esc(x)+'</div>');});
-(t.trim_considerations||[]).forEach(function(c){if(onKeep(c.ticker)||onKeep(c.note))return;notes.push('<div class="msg gap"><b>'+esc(c.ticker)+
-' is '+Number(c.pct_nav).toFixed(1)+'% of total.</b> '+esc(c.note||"")+'</div>');});
-$("pf-notes").innerHTML=notes.join("");
+   concentration and trim notes on it are not shown (standing decision of 15 Nov 2026).
+   board cycle 10 (I63): PORTFOLIO is drawn before the keep list arrives, so the notes wait for it (fail closed) */
+pfNotes(t);
 renderWhatIf(pos,num(t.nav)||0);
 renderGoal();
 renderCosts();
@@ -1415,9 +1421,10 @@ parts.push('<div class="arow"><span class="aw">'+esc(shortDate(e.at))+'</span><d
 $("week").innerHTML=parts.join("");
 var q=null;
 /* board cycle 9 (I49): an Advisor question on the conviction holding (kept by Ben's choice, 15 Nov 2026) is never shown */
-var kq=window.MCX&&window.MCX.X||{},keepQ=Object.keys((kq.dec&&kq.dec.keeps)||{}).concat(((kq.results&&kq.results.conviction&&kq.results.conviction.positions)||[]).map(function(p){return p.ticker;}));
+/* board cycle 10 (I63): until the keep list has loaded no Advisor question is shown (fail closed), then REVIEW is drawn again */
+var keepQ=keepsKnown();if(keepQ===null){keepQ=null;if((renderReview.n=(renderReview.n||0)+1)<30)setTimeout(renderReview,1000);}
 function onKeepQ(p,a){var tx=(a.questions||[]).join(" ")+" "+(a.framing||"");return keepQ.some(function(k){return k&&(p.ticker===k||new RegExp("\\b"+k+"\\b").test(tx));});}
-(((S.history&&S.history.entries)||[]).slice().reverse()).some(function(e){
+if(keepQ!==null)(((S.history&&S.history.entries)||[]).slice().reverse()).some(function(e){
 return (e.picks||[]).some(function(p){var a=p.advisor_questions;if(a&&a.questions&&a.questions.length&&!onKeepQ(p,a)){q={p:p,a:a,at:e.as_of};return true;}return false;});
 });
 $("advq").innerHTML=q?'<b>'+esc(q.p.ticker)+(q.a.framing?" "+DASH+" "+esc(q.a.framing):"")+'</b><div style="margin-top:6px;color:var(--tx)">'+esc(q.a.questions[0])+

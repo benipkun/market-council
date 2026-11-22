@@ -215,8 +215,10 @@ def build(now=None):
             "by_sector": group(positions, "sector", cash, nav), "by_region": group(positions, "region", None, nav),
             "by_type": group(positions, "type", None, nav), "by_risk": group(positions, "risk", None, nav, {"jumpy": "Jumpy", "normal": "Normal", "calm": "Calm"}),
             "by_origin": group(positions, "origin", None, nav, {"suggested": "Suggested by Market Council", "outside": "Outside source", "own": "Your own idea"}),
-            "largest": positions[0] if positions else None,
-            "top3_pct": round(sum(p["value"] for p in positions[:3]) / nav, 4) if nav else None,
+            # board cycle 10 (I64): a conviction holding's weight is shown once, on PORTFOLIO (Ben, 15 Nov 2026), so these leave it out
+            "largest": ([p for p in positions if not p["kept"]] or [None])[0],
+            "top3_pct": round(sum(p["value"] for p in [q for q in positions if not q["kept"]][:3]) / nav, 4) if nav else None,
+            "conviction_left_out": any(p["kept"] for p in positions),
             "unknown": [p["ticker"] for p in positions if not (p.get("sector") and p.get("country") and p.get("type"))]}
     ctx = {"pos": pos, "nav": nav, "lim": (dec.get("profile") or {}).get("limits") or {}, "books_as_of": snap.get("as_of"), "quant": src["quant"],
            "plans": plans, "class": cls, "src": src, "expo": expo}

@@ -147,9 +147,13 @@ def keep_plans(answers, pos, now):
     return out
 
 
-def keep_cards(keeps, pos, lim, nav):
+def keep_cards(keeps, pos, lim, nav, conviction=()):
+    # board cycle 10 (I62): a conviction holding (Ben, 15 Nov 2026) never gets a sell card; reaching the target or the
+    # review date is an alert that reports the fact and asks nothing (state/plans.json events)
     out, by = [], {p["t"]: p for p in pos}
     for t, k in keeps.items():
+        if t in conviction:
+            continue
         p = by[t]
         over = max(0.0, p["w"] - lim["stock_cap"]) * nav
         if not (k["reached"] or k["overdue"]) or over < MIN_ORDER or not p["px"]:
@@ -329,9 +333,12 @@ def short_ideas(ix, pos, quant, lim, nav):
             "rule": "A share qualifies when its price is at least 30% above our own fair value and it trades under its 200-day average."}, cards
 
 
-def sell_cards(pos, prof, nav):
+def sell_cards(pos, prof, nav, conviction=()):
+    # a conviction holding below the maximum-loss line is an alert that reports the fact (state/plans.json events), not a sell card
     out, ml = [], float(prof.get("max_loss_pct") or 25) / 100.0
     for p in pos:
+        if p["t"] in conviction:
+            continue
         if p.get("pl") is not None and p["pl"] <= -ml:
             out.append({"key": "SELL:" + p["t"], "kind": "sell", "ticker": p["t"], "title": "Sell %s: it has lost more than your maximum loss" % p["t"],
                         "orders": [{"side": "sell", "ticker": p["t"], "name": p["name"], "usd": r2(p["mv"]), "pct_nav": r2(p["mv"] / nav, 4), "ref_price": r2(p["px"], 4),
@@ -519,7 +526,7 @@ def goal(plan, nav, fx, pvol, pmu, now, contrib=None):
 
 
 # ---------------------------------------------------------------- item 17: what the doomsday protocol means for these holdings
-def doom_steps(pos, quant, lim, nav, uni, lab):
+def doom_steps(pos, quant, lim, nav, uni, lab, conviction=()):
     st = quant.get("stress") or {}
     eq = [p for p in pos if p["cls"] in ("Equity", "Equity fund")]
     total = sum(p["mv"] for p in eq)
@@ -549,8 +556,13 @@ def doom_steps(pos, quant, lim, nav, uni, lab):
                         hit[0]["why"] += ", then by its share of the portfolio's swings"
                     else:
                         sells.append({"t": p["t"], "usd": r2(x), "share_of_position": r2(x / p["mv"], 4), "why": "by its share of the portfolio's swings"})
-        steps[lv] = {"keep": KEEP[lv], "sell": sells, "total_usd": r2(sum(s["usd"] for s in sells)),
-                     "text": "Bring shares and share funds down to %s of what they are now. Sell in this order; move the money into %s." % (pc(KEEP[lv]), safe)}
+        # board cycle 10 (I62): a conviction holding is never in the sell list (Ben, 15 Nov 2026); the other lines keep
+        # the amounts the protocol gives them (how to size them without it is card B18)
+        kept = sorted(set(s["t"] for s in sells) & set(conviction))
+        sells = [s for s in sells if s["t"] not in conviction]
+        steps[lv] = {"keep": KEEP[lv], "sell": sells, "total_usd": r2(sum(s["usd"] for s in sells)), "kept": kept,
+                     "text": "Bring shares and share funds down to %s of what they are now. Sell in this order; move the money into %s.%s" % (
+                         pc(KEEP[lv]), safe, (" %s is your conviction holding, kept by your choice, and is not in this list." % " and ".join(kept)) if kept else "")}
     d = (lab or {}).get("doomsday") or {}
     return {"level": st.get("level"), "as_of": st.get("as_of"), "steps": steps, "safe": safe,
             "return_rule": "Step back up one level only after ten trading days in a row at a calmer level, buying back the same amounts.",
@@ -971,8 +983,11 @@ def portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct):
     r0 = rets_for(base)
     if r0 is None:
         return None
-    top = max(held, key=lambda t: held[t])
-    out = {"largest": {"t": top, "share": r2(held[top], 4)}, "bad_year": r2(bad_year(held, r0, mus), 4), "days": int(len(r0["SPY"])),
+    # board cycle 10 (I64): the largest holding named on TODAY and in the meetings leaves out a conviction holding (its weight
+    # is shown once, on PORTFOLIO: Ben, 15 Nov 2026); the bad year still counts every holding
+    others = [t for t in held if t not in (keeps or {})] or list(held)
+    top = max(others, key=lambda t: held[t])
+    out = {"largest": {"t": top, "share": r2(held[top], 4)}, "largest_leaves_out": sorted(t for t in held if t in (keeps or {})), "bad_year": r2(bad_year(held, r0, mus), 4), "days": int(len(r0["SPY"])),
            "covers": r2(sum(w for t, w in held.items() if t in r0), 4), "keeps": {},
            "method": "The bad year is the one-in-ten worst outcome of 4,000 simulated years, drawn from the holdings' own daily price changes over all the days they share in unbroken 21-day stretches, with each share shifted to its assumed yearly return and cash earning nothing. Before and after use the same random draws, so the difference comes only from the weights. An estimate."}
     cap = float(lim.get("stock_cap") or 0)
@@ -1003,7 +1018,7 @@ def portfolio_first(snap, quant, wanted, nav, cash, lim, keeps, fct):
         b0, b1, b2 = bad_year(held, rr, mus), bad_year(w_i, rr, mus), bad_year(w_s, rr, mus)
         if b0 is None or b1 is None or b2 is None:
             continue
-        big = max(w_i, key=lambda k: w_i[k])
+        big = max([k for k in w_i if k not in (keeps or {})] or list(w_i), key=lambda k: w_i[k])
         f = (((fct or {}).get(t) or {}).get("h") or {}).get("1y") or {}
         x["portfolio"] = {"size": r2(s), "new_money": r2(new_money), "largest_before": {"t": top, "share": r2(held[top], 4)}, "largest_after": {"t": big, "share": r2(w_i[big], 4)},
                           "bad_before": r2(b0, 4), "bad_after": r2(b1, 4), "bad_if_index": r2(b2, 4), "change": r2(b1 - b0, 4), "index_change": r2(b2 - b0, 4),
@@ -1406,7 +1421,7 @@ def main():
                    "next": max(due, day(now)).isoformat(), "note": "Rebalance plan: part %d of %d." % (part, TRANCHES)}
     rows, buy = screen(ix, pos, quant, lim, nav, cash, council, now)
     shorts, short_cards = short_ideas(ix, pos, quant, lim, nav)
-    wanted += buy + sell_cards(pos, prof, nav) + short_cards + keep_cards(keeps, pos, lim, nav)
+    wanted += buy + sell_cards(pos, prof, nav, keeps) + short_cards + keep_cards(keeps, pos, lim, nav, keeps)
     # every other source of ideas joins the same desk: scorecard passes, short-term rule entries, the house core
     strat_out, scr = E.rj("state/strategy.json", {}) or {}, E.rj("state/screen.json", {}) or {}
     log = dict(prev.get("ideas_log") or {})
@@ -1553,7 +1568,7 @@ def main():
            "portfolio_range": {"months": 12, "low": r2(math.exp((pmu - pvol * pvol / 2) - Z80 * pvol) - 1, 4), "mid": r2(math.exp(pmu - pvol * pvol / 2) - 1, 4),
                                "high": r2(math.exp((pmu - pvol * pvol / 2) + Z80 * pvol) - 1, 4), "mu": r2(pmu, 4), "vol": pvol} if pvol else None,
            "goal": goal(E.rj("state/plan.json", {}), nav, E.rj("state/fx.json", {}), pvol, pmu, now, E.rj("state/contribution.json", {})),
-           "doomsday": doom_steps(pos, quant, lim, nav, uni, lab_out),
+           "doomsday": doom_steps(pos, quant, lim, nav, uni, lab_out, keeps),
            "spreading": lab_out.get("spreading"),
            "answers": {"read": len(answers), "last": answers[-1]["at"] if answers else None},
            "failed": failed if not QUICK else (prev.get("failed") or []),

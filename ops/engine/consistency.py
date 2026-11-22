@@ -66,6 +66,20 @@ def check_conviction(root=None):
     for c in (rj("state/decisions.json", {}) or {}).get("cards") or []:
         if c.get("status") == "open" and not c.get("greyed"):
             conviction_scan(" ".join(str(c.get(k) or "") for k in ("title", "why", "line")), keeps, "card %s" % c.get("id"), v)
+    # board cycle 10 (I62): the stress protocol on SYSTEM and the order plans on PLANS are screens too
+    dec = rj("state/decisions.json", {}) or {}
+    for lv, st in (((dec.get("doomsday") or {}).get("steps")) or {}).items():
+        for x in (st or {}).get("sell") or []:
+            if x.get("t") in keeps:
+                v.append("the stress protocol (%s) sells %s, a conviction holding" % (lv, x.get("t")))
+    for c in dec.get("cards") or []:
+        if c.get("status") == "open" and any(o.get("side") == "sell" and o.get("ticker") in keeps for o in c.get("orders") or []):
+            v.append("card %s sells %s, a conviction holding" % (c.get("id"), c.get("ticker")))
+    for h in (rj("state/plans.json", {}) or {}).get("holdings") or []:
+        if h.get("ticker") in keeps:
+            for step in h.get("revolut") or []:
+                if re.search(r"\bSell\b|\bsell \d|stop order\.", str(step)) and "No order to place" not in str(step):
+                    v.append("the order plan for %s, a conviction holding, gives a sell order: '%s'" % (h.get("ticker"), str(step)[:100]))
     try:
         conviction_scan(re.sub(r"<[^>]+>", "\n", open(os.path.join(ROOT, "brief", "index.html"), encoding="utf-8").read()), keeps, "the brief", v)
     except Exception:

@@ -1442,8 +1442,6 @@ class NewsDesk(unittest.TestCase):
         self.assertAlmostEqual(FI.fee(1000.0), 2.5)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=1)
 
 
 class BoardCycle8(unittest.TestCase):
@@ -1452,8 +1450,8 @@ class BoardCycle8(unittest.TestCase):
     def test_portfolio_hides_pipeline_trim_notes_on_a_kept_holding(self):
         with open(os.path.join(HERE, "..", "index.html"), encoding="utf-8") as f:
             html = f.read()
-        self.assertIn("kx.dec&&kx.dec.keeps", html)
-        self.assertIn("kx.results.conviction.positions", html)
+        self.assertIn("x.dec&&x.dec.keeps", html)                            # cycle 10: read through keepsKnown()
+        self.assertIn("x.results.conviction.positions", html)
         self.assertIn("(t.concentration_flags||[]).forEach(function(x){if(onKeep(x))return;", html)
         self.assertIn("(t.trim_considerations||[]).forEach(function(c){if(onKeep(c.ticker)||onKeep(c.note))return;", html)
 
@@ -1508,3 +1506,80 @@ class BoardCycle9(unittest.TestCase):
         with open(os.path.join(HERE, "..", "index.html"), encoding="utf-8") as f:
             html = f.read()
         self.assertIn("a.questions.length&&!onKeepQ(p,a)", html)
+
+
+class BoardCycle10(unittest.TestCase):
+    """Board cycle 10: the conviction holding (Ben, 15 Nov 2026) is never in a sell list, a sell order or a sell card,
+    and its weight is not repeated on TODAY."""
+
+    POS = [{"t": "KEEP", "cls": "Equity", "mv": 400.0, "w": 0.40, "risk_share": 0.6, "px": 50.0, "name": "Keep Co", "pl": -0.35, "qty": 8},
+           {"t": "AAA", "cls": "Equity", "mv": 300.0, "w": 0.30, "risk_share": 0.4, "px": 30.0, "name": "Aaa", "pl": -0.40, "qty": 10}]
+    LIM = {"stock_cap": 0.30}
+
+    def test_the_stress_protocol_never_sells_the_conviction_holding(self):
+        quant = {"stress": {"level": "Defensive"}}
+        d = D.doom_steps(self.POS, quant, self.LIM, 1000.0, {}, {}, {"KEEP": {}})
+        for lv in ("Defensive", "Doomsday"):
+            self.assertNotIn("KEEP", [s["t"] for s in d["steps"][lv]["sell"]])
+            self.assertEqual(d["steps"][lv]["kept"], ["KEEP"])
+            self.assertIn("conviction holding", d["steps"][lv]["text"])
+        before = dict((s["t"], s["usd"]) for s in D.doom_steps(self.POS, quant, self.LIM, 1000.0, {}, {})["steps"]["Defensive"]["sell"])
+        after = dict((s["t"], s["usd"]) for s in d["steps"]["Defensive"]["sell"])
+        self.assertIn("KEEP", before)
+        self.assertEqual(after["AAA"], before["AAA"])                          # the other lines keep their amounts
+
+    def test_no_sell_card_for_the_conviction_holding(self):
+        keeps = {"KEEP": {"reached": True, "overdue": False, "target": 45.0, "set_at": "2026-10-05", "by": "2027-10-05"}}
+        self.assertEqual(D.keep_cards(keeps, self.POS, self.LIM, 1000.0, keeps), [])
+        cards = D.sell_cards(self.POS, {"max_loss_pct": 30}, 1000.0, keeps)
+        self.assertEqual([c["ticker"] for c in cards], ["AAA"])                # the other holding still gets its maximum-loss card
+
+    def test_the_kept_plan_gives_alerts_only(self):
+        p = {"ticker": "KEEP", "qty": 9.5, "last_price": 50.0, "market_value": 475.0, "cost_basis": 700.0}
+        k = PL.holding_plan(p, {"levels": [{"name": "Maximum-loss line (30% below cost)", "price": 51.58}]}, {"target": 80.0, "by": "2027-10-05"}, "long",
+                            [("d", 50.0)] * 30, {}, 1000.0, None, datetime.date(2026, 11, 22))
+        self.assertTrue(k["revolut"])
+        for step in k["revolut"]:
+            self.assertIn("No order to place", step)
+            self.assertNotIn("Stop order", step)
+        self.assertNotIn("fraction_note", k)
+        ev = PL.watch([k], {}, {}, datetime.date(2026, 11, 22))
+        texts = " ".join(e["text"] for e in ev)
+        self.assertIn("under the maximum-loss line", texts)
+        self.assertNotIn("sell", texts.lower())
+
+    def test_the_check_reads_the_stress_protocol_and_the_plans(self):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "state"))
+        dec = {"keeps": {"UBER": {}}, "cards": [], "doomsday": {"steps": {"Defensive": {"sell": [{"t": "UBER", "usd": 410.0}, {"t": "MO", "usd": 10.0}]}}}}
+        json.dump(dec, open(os.path.join(d, "state", "decisions.json"), "w"))
+        json.dump({"holdings": [{"ticker": "UBER", "revolut": ["Stop-loss: UBER > Sell > Stop order. Stop price $52.96, 9 shares."]}]}, open(os.path.join(d, "state", "plans.json"), "w"))
+        v = CC.check_conviction(d)
+        self.assertTrue(any("stress protocol" in x for x in v))
+        self.assertTrue(any("order plan for UBER" in x for x in v))
+        dec["doomsday"]["steps"]["Defensive"]["sell"] = [{"t": "MO", "usd": 10.0}]
+        json.dump(dec, open(os.path.join(d, "state", "decisions.json"), "w"))
+        json.dump({"holdings": [{"ticker": "UBER", "revolut": [PL.revolut_steps("UBER", 9, 63.0, 52.96, 80.0, "2027-10-05", True, False, True)[0]]}]}, open(os.path.join(d, "state", "plans.json"), "w"))
+        self.assertEqual(CC.check_conviction(d), [])
+
+    def test_portfolio_notes_and_advisor_questions_wait_for_the_keep_list(self):
+        with open(os.path.join(HERE, "..", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn("if(keepT===null){el.innerHTML=\"\"", html)
+        self.assertIn("if(keepQ!==null)", html)
+
+    def test_today_labels(self):
+        with open(os.path.join(HERE, "..", "mc", "p11.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertNotIn("(1 in 20)", js)                                   # the bad year is the 10th percentile
+        self.assertIn("apart from your conviction holding", js)
+
+    def test_every_test_class_runs_in_ci(self):
+        # CI runs this file directly; unittest.main() must come after the last class or the later classes never run
+        with open(os.path.abspath(__file__), encoding="utf-8") as f:
+            src = f.read()
+        self.assertGreater(src.index("unittest.main("), src.rindex("\nclass "))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)

@@ -37,8 +37,9 @@ return M.blk("LIVE TRACK RECORD",t.intact?'<span class="stg live">UNEDITED LOG</
 function render(){var el=$("v-record");if(!el)return;var h=html();if(el.__h!==h){var open={};Array.prototype.forEach.call(el.querySelectorAll("details"),function(d,i){if(d.open)open[i]=1;});var had=el.__h!=null;el.innerHTML=h;el.__h=h;
 if(had)Array.prototype.forEach.call(el.querySelectorAll("details"),function(d,i){d.open=!!open[i];});}}
 /* the label above every idea card that rests on checks which have not proved themselves */
+function apart(){var f=M.X.dec&&M.X.dec.portfolio_first;return f&&f.largest_leaves_out&&f.largest_leaves_out.length?" apart from your conviction holding":"";}
 function pfLine(c){var p=c&&c.portfolio;if(!p||!p.largest_before)return "";
-return '<div class="q"><b style="color:var(--tx)">Portfolio first:</b> with '+esc(MC.money(p.size))+' in this idea, the largest holding goes from '+esc(p.largest_before.t)+' '+pc(p.largest_before.share)+' to '+esc(p.largest_after.t)+' '+pc(p.largest_after.share)+
+return '<div class="q"><b style="color:var(--tx)">Portfolio first:</b> with '+esc(MC.money(p.size))+' in this idea, the largest holding'+apart()+' goes from '+esc(p.largest_before.t)+' '+pc(p.largest_before.share)+' to '+esc(p.largest_after.t)+' '+pc(p.largest_after.share)+
 ', and the bad year (one in ten) from '+sg(p.bad_before)+' to '+sg(p.bad_after)+'. The same money in the index fund instead: '+sg(p.bad_if_index)+'.'+
 (p.beat_index_1y!=null?' Chance this idea beats the index fund over a year: '+pc(p.beat_index_1y)+'.':'')+' <span class="fl">Estimates.</span></div>';}
 M.cardTop=function(c){if(!c||c.kind!=="idea")return "";var ks=(c.checks||[]).filter(function(k){return k.pass===true&&state(k.id)!=="proven";});
@@ -53,7 +54,7 @@ return top+M.blk("LIVE TRACK RECORD",'<span class="stg paper">'+(t&&t.all&&t.all
 var prevRk=M.slots["rk-extra"];
 M.slots["rk-extra"]=function(){var top=prevRk?prevRk():"",d=M.X.dec,p=d&&d.portfolio_first;if(!p||p.error||!p.largest)return top;
 var ks=Object.keys(p.keeps||{}).map(function(t){var k=p.keeps[t];return '<div class="q"><b style="color:var(--tx)">Your decision to keep '+esc(t)+' stands.</b> Its effect on the figures: as held, at '+pc(k.share)+' of the portfolio, the bad year is '+sg(k.bad_as_held)+'; at the profile limit of '+pc(k.cap)+', with the rest in the index fund, it would be '+sg(k.bad_at_cap)+'. Shown for information; the decision is not reopened.</div>';}).join("");
-return top+M.blk("WHOLE PORTFOLIO FIRST",'<span class="stg paper">ESTIMATE</span>',M.kv("Largest holding",esc(p.largest.t)+" "+pc(p.largest.share))+M.kv("Bad year (one in ten)",sg(p.bad_year))+ks+'<div class="src">'+esc(p.method||"")+'</div>',
+return top+M.blk("WHOLE PORTFOLIO FIRST",'<span class="stg paper">ESTIMATE</span>',M.kv("Largest holding"+apart(),esc(p.largest.t)+" "+pc(p.largest.share))+M.kv("Bad year (one in ten)",sg(p.bad_year))+ks+'<div class="src">'+esc(p.method||"")+'</div>',
 "Every idea card shows these two figures before and after the idea, and the same money in the index fund. Ideas are ranked by how much they shrink the bad year.");};
 MC.hooks.push(render);
 M.reload();

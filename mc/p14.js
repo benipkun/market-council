@@ -41,7 +41,8 @@ function html(){
   if(tr.length>1)body+='<div class="gap"><button class="btn sm" data-p14="more">'+(open?"Show only the latest trade":"Show the last "+tr.length+" trades")+'</button></div>';
   body+=bars("BY SECTOR (OF YOUR WHOLE PORTFOLIO, CASH INCLUDED)",x.by_sector)+bars("BY REGION",x.by_region)+bars("HOW JUMPY",x.by_risk)+bars("WHERE THE IDEAS CAME FROM",x.by_origin);
   var lg=x.largest;
-  body+='<div style="font-size:12px;margin-top:8px">Largest holding: '+(lg?esc(lg.ticker)+" "+pct(lg.pct):DASH)+'. Your three largest: '+pct(x.top3_pct)+' of the portfolio.'+
+  var kept=x.conviction_left_out?" apart from your conviction holding":"";
+  body+='<div style="font-size:12px;margin-top:8px">Largest holding'+kept+': '+(lg?esc(lg.ticker)+" "+pct(lg.pct):DASH)+'. Your three largest'+kept+': '+pct(x.top3_pct)+' of the portfolio.'+
         (x.unknown&&x.unknown.length?' Not classified yet: '+esc(x.unknown.join(", "))+'.':"")+'</div>';
   var bad=tr.filter(function(t){return t.status==="fail";}).length;
   return M.blk("YOUR TRADES AND EXPOSURE",'<span class="stg '+(bad?"stale":"live")+'">'+(bad?bad+" NEED A LOOK":"BOOKS MATCH")+'</span>',body,
