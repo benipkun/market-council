@@ -313,6 +313,28 @@ class PhoneMessages(unittest.TestCase):
         self.assertIn("gh workflow run listen.yml", text)
 
 
+class DoNothingReason(unittest.TestCase):
+    # 23 Nov 2026: with $0 cash the answer said no idea makes money, next to ideas with a positive expected result
+    def cands(self):
+        why = "REJECTED TODAY: no cash: free cash is $0.00, under the $100 minimum order"
+        return [{"t": "AAA", "edge": 0.02, "held_back": [why], "fc": {}}, {"t": "BBB", "edge": 0.05, "held_back": [why], "fc": {}},
+                {"t": "CCC", "edge": None, "held_back": ["no forecast yet"], "fc": {}}]
+
+    def test_no_cash_is_named_as_the_reason(self):
+        r = A.why_nothing(self.cands(), {"stale": [], "free_cash": 0.0, "monthly_huf": 120000.0})
+        self.assertTrue(r.startswith("No free cash"), r)
+        self.assertNotIn("No idea is expected to make money", r)
+
+    def test_the_waiting_ideas_are_ranked_best_first(self):
+        r = A.why_nothing(self.cands(), {"stale": [], "free_cash": 0.0})
+        self.assertLess(r.index("BBB +5.0%"), r.index("AAA +2.0%"))
+        self.assertNotIn("CCC", r)
+
+    def test_ideas_that_truly_lose_keep_the_old_reason(self):
+        r = A.why_nothing([{"t": "DDD", "edge": -0.01, "held_back": ["price check failed"], "fc": {}, "index_edge": 0.08}], {"stale": [], "free_cash": 500.0})
+        self.assertTrue(r.startswith("No idea is expected to make money"), r)
+
+
 class PublicRepo(unittest.TestCase):
     def test_no_record_folder_is_tracked(self):
         try:
