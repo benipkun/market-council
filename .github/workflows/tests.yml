@@ -4,11 +4,12 @@
 name: Tests
 on:
   push:
-    branches: [main]
+    branches: ["**"]
     paths: ["ops/**", "tests/**", "mc/**", "index.html", ".github/workflows/tests.yml"]
+  pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
   actions: read
 jobs:
   test:
@@ -23,13 +24,21 @@ jobs:
         run: pip install --quiet numpy scipy
       - name: Run the tests
         run: python tests/test_numbers.py
+      - name: Run the money tests
+        run: python tests/test_money.py
       - name: Check every app script parses
         # board cycle 1: a broken quote in mc/p11.js stopped TODAY's action list for half an hour
         run: |
           for f in mc/*.js; do node --check "$f" || exit 1; done
           echo "app scripts parse"
+      # every tested version of main gets a tag, so the Rollback job can go back to it in one step
+      - name: Mark this version as a release
+        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          t="release-$(date -u +%Y%m%d-%H%M)-${GITHUB_SHA::7}"
+          git tag "$t" && git push -q origin "$t" && echo "tagged $t"
       - name: Tell the phone if this job failed
-        if: failure()
+        if: failure() && github.ref == 'refs/heads/main'
         env:
           MC_TOKEN: ${{ secrets.MC_TOKEN }}
           GH_TOKEN: ${{ github.token }}
