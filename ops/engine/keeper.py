@@ -61,13 +61,15 @@ def remark(snap, closes, now):
         if not q or q <= 0 or str(p.get("price_as_of") or "")[:10] > d:
             continue
         lp = float(p.get("last_price") or 0)
-        if lp > 0:
-            p["market_value"] = round(float(p.get("market_value") or 0) * q / lp, 2)
-        elif p.get("qty") not in (None, ""):
+        old_value = float(p.get("market_value") or 0)
+        # shares x close whenever the share count is known; scaling the old value would carry a wrong value forward for ever
+        if p.get("qty") not in (None, ""):
             p["market_value"] = round(float(p["qty"]) * q, 2)
+        elif lp > 0:
+            p["market_value"] = round(float(p.get("market_value") or 0) * q / lp, 2)
         else:
             continue
-        if abs(q - lp) > 1e-9 or str(p.get("price_as_of") or "")[:10] != d:
+        if abs(q - lp) > 1e-9 or str(p.get("price_as_of") or "")[:10] != d or abs(p["market_value"] - old_value) >= 0.01:
             changed.append(p["ticker"])
         p["last_price"], p["price_as_of"] = round(q, 4), d + "T21:00:00Z"
     if not changed:

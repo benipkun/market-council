@@ -50,11 +50,13 @@ def refresh(snap, fetch=None, now=None):
         if not px:
             continue
         old = float(p.get("last_price") or 0)
+        old_value = float(p.get("market_value") or 0)
         p["last_price"] = round(px, 4)
         p["market_value"] = round(float(q) * px, 2)
         p["price_as_of"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         p["price_source"] = "Cboe delayed quote" + (" (%s)" % when[:16] if when else "")
-        if abs(px - old) > 1e-9:
+        # a value that disagrees with shares x price must be saved even when the price itself did not move (ANT, 23 Nov 2026)
+        if abs(px - old) > 1e-9 or abs(p["market_value"] - old_value) >= 0.01:
             changed.append(t)
     cash = float(snap.get("cash") or 0)
     nav = cash + sum(float(p.get("market_value") or 0) for p in snap.get("positions") or [])

@@ -266,6 +266,53 @@ class ConvictionGuard(unittest.TestCase):
         self.assertEqual(str(k.get("by") or k.get("review")), "%s-%s-%02d" % (d[2], months[d[1]], int(d[0])))
 
 
+class ValueIsSharesTimesPrice(unittest.TestCase):
+    # 23 Nov 2026: a share logged at $108 while its quote was $87.64 kept its cost as its value, so the total was $111 too high
+    def snap(self):
+        return {"cash": 0.0, "nav": 1000.0, "positions": [{"ticker": "NEW", "qty": 10.0, "last_price": 80.0, "market_value": 1000.0}]}
+
+    def test_refresh_saves_a_wrong_value_when_the_price_is_unchanged(self):
+        import prices
+        s = self.snap()
+        changed = prices.refresh(s, fetch=lambda t: {"current_price": 80.0, "last_trade_time": "2026-11-23T21:00:00"})
+        self.assertEqual(changed, ["NEW"])
+        self.assertEqual(s["positions"][0]["market_value"], 800.0)
+        self.assertEqual(s["nav"], 800.0)
+
+    def test_refresh_reports_nothing_when_all_is_right(self):
+        import prices
+        s = self.snap()
+        s["positions"][0]["market_value"] = 800.0
+        self.assertEqual(prices.refresh(s, fetch=lambda t: {"current_price": 80.0}), [])
+
+
+class NightlyRemark(unittest.TestCase):
+    def test_remark_uses_shares_times_close_not_the_old_value(self):
+        import keeper
+        s = {"cash": 0.0, "positions": [{"ticker": "NEW", "qty": 10.0, "last_price": 80.0, "market_value": 1000.0, "price_as_of": "2026-11-20T21:00:00Z"}]}
+        keeper.remark(s, {"NEW": ("2026-11-23", 90.0)}, "2026-11-23T22:00:00Z")
+        self.assertEqual(s["positions"][0]["market_value"], 900.0)
+
+    def test_remark_saves_a_wrong_value_when_the_close_is_unchanged(self):
+        import keeper
+        s = {"cash": 0.0, "nav": 1000.0, "positions": [{"ticker": "NEW", "qty": 10.0, "last_price": 80.0, "market_value": 1000.0, "price_as_of": "2026-11-23T21:00:00Z"}]}
+        self.assertEqual(keeper.remark(s, {"NEW": ("2026-11-23", 80.0)}, "2026-11-23T22:00:00Z"), ["NEW"])
+        self.assertEqual(s["nav"], 800.0)
+
+    def test_remark_without_a_share_count_still_scales(self):
+        import keeper
+        s = {"cash": 0.0, "positions": [{"ticker": "OLD", "qty": None, "last_price": 50.0, "market_value": 500.0, "price_as_of": "2026-11-20T21:00:00Z"}]}
+        keeper.remark(s, {"OLD": ("2026-11-23", 55.0)}, "2026-11-23T22:00:00Z")
+        self.assertEqual(s["positions"][0]["market_value"], 550.0)
+
+
+class PhoneMessages(unittest.TestCase):
+    def test_the_clock_starts_message_pickup(self):
+        # GitHub skipped the five-minute schedule for hours on 23 Nov 2026, so phone messages waited
+        text = open(os.path.join(HERE, "..", ".github", "workflows", "clock.yml"), encoding="utf-8").read()
+        self.assertIn("gh workflow run listen.yml", text)
+
+
 class PublicRepo(unittest.TestCase):
     def test_no_record_folder_is_tracked(self):
         try:
