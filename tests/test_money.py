@@ -335,6 +335,35 @@ class DoNothingReason(unittest.TestCase):
         self.assertTrue(r.startswith("No idea is expected to make money"), r)
 
 
+class PhoneDelivery(unittest.TestCase):
+    # GitHub keeps one waiting job per group and cancels the older one, so a message added by a cancelled job was never sent
+    def test_a_message_from_a_cancelled_job_is_still_sent(self):
+        import outbox_send as O
+        self.assertEqual(O.pending(["a.json", "b.json", "c.json"], {"a.json"}), ["b.json", "c.json"])
+
+    def test_a_sent_message_is_never_sent_twice(self):
+        import outbox_send as O
+        self.assertEqual(O.pending(["a.json"], {"a.json"}), [])
+
+    def test_first_run_does_not_resend_the_whole_history(self):
+        import outbox_send as O
+        self.assertEqual(O.pending(["a.json", "b.json"], None), [])
+
+    def test_only_delivered_messages_are_marked_sent(self):
+        import outbox_send as O
+        d = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(d, "outbox", "queue"))
+            for n in ("a", "b"):
+                open(os.path.join(d, "outbox", "queue", n + ".json"), "w").write("{}")
+            open(os.path.join(d, "outbox", "sent.txt"), "w").write("")
+            failed = O.run(d, lambda name, msg: 200 if name == "a.json" else 500)
+            self.assertEqual(failed, ["b.json"])
+            self.assertEqual(open(os.path.join(d, "outbox", "sent.txt")).read().split(), ["a.json"])
+        finally:
+            shutil.rmtree(d)
+
+
 class PublicRepo(unittest.TestCase):
     def test_no_record_folder_is_tracked(self):
         try:
