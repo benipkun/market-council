@@ -1436,10 +1436,10 @@ class NewsDesk(unittest.TestCase):
         self.assertEqual(out[0]["tickers"], ["PFE", "NVO"])
         self.assertEqual(out[1].get("dup_of"), out[0]["id"])
 
-    def test_books_fee_is_quarter_percent_with_a_dollar_minimum(self):
+    def test_books_fee_is_two_cents(self):
         import files as FI
-        self.assertEqual(FI.fee(100.0), 1.0)
-        self.assertAlmostEqual(FI.fee(1000.0), 2.5)
+        self.assertEqual(FI.fee(100.0), 0.02)
+        self.assertEqual(FI.fee(1000.0), 0.02)
 
 
 

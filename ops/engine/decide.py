@@ -830,8 +830,9 @@ def cost_lines(t, liq, limit, sizes):
                      (" Daily trading: average of the last %d trading day%s." % (x.get("adv_days") or 0, "" if x.get("adv_days") == 1 else "s") if adv else " Daily trading volume did not load this run."))}
 
 # ---------------------------------------------------------------- the decision desk: every source of ideas, one kind of card
+import fees as FEES  # noqa: E402
 SIZES = (100.0, 500.0, 1000.0)     # shown on every card until Ben names his own amount
-FEE_PCT, FEE_MIN = 0.0, 0.02      # Ben's Revolut plan: about 1 to 2 cents a trade (his figure, 23 Oct 2026); past the plan's free trades Revolut charges 0.25%, at least one euro
+FEE_PCT, FEE_MIN = 0.0, FEES.AFTER_FREE      # Ben's Revolut plan: about 1 to 2 cents a trade (his figure, 23 Oct 2026); past the plan's free trades Revolut charges 0.25%, at least one euro
 PAY_SHARE = 0.10                   # where no measured average exists, an idea "pays" when fees take under a tenth of the planned gain
 DESK_PASS = 5
 DESK_SCORE_MAX = 6                 # the best six scorecard ideas become cards (three until 17 Nov 2026: Ben, too few picks); the others are listed underneath
@@ -1367,6 +1368,8 @@ def main():
         print("decide: no engine numbers or no snapshot")
         return
     uni, ledger = E.rj("ops/engine/universe.json", {}) or {}, E.rj("treasury/ledger.json", {}) or {}
+    global FEE_MIN
+    FEE_MIN = FEES.fee_now(FEES.trades_in_month(ledger.get("entries"), datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")))   # 10 free trades a month, then 2 cents
     ix, digest = E.rj("research/cards/index.json", {}) or {}, E.rj("digests/latest.json", {}) or {}
     council, lab_out = E.rj("state/council.json", {}) or {}, E.rj("state/lab.json", {}) or {}
     prev, smart = E.rj("state/decisions.json", {}) or {}, E.rj("state/smart_money.json", {}) or {}

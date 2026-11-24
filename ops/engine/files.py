@@ -16,7 +16,7 @@ Thesis tracker: important items are checked against the file. With an API key an
 them; otherwise plain rules do (tone, source reliability, severe filings) and say so. A broken thesis on a holding
 raises a review card (never for a position you chose to keep: UBER gets facts only, within the standing decision).
 Three books: from 21 Nov 2026, on paper, the system with the news and files, the system without them, and the
-S&P 500 fund, each idea bought with the same dollars on the day, after Revolut fees (0.25%, at least $1, both ways).
+S&P 500 fund, each idea bought with the same dollars on the day, after Ben's real fees (10 free trades a month, then 2 cents; counted at 2 cents, both ways).
 """
 import datetime
 import glob
@@ -27,13 +27,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import fees as F  # noqa: E402
 import news as N  # noqa: E402
 
 ROOT = N.ROOT
 FEW, VERDICT_CASES, VERDICT_DAYS = 20, 60, 91
 BOOKS_START = "2026-11-21"
 STAKE = 250.0
-FEE_RATE, FEE_MIN = 0.0025, 1.0
+FEE_RATE, FEE_MIN = 0.0, F.AFTER_FREE
 WEAK_DAYS, WEAK_COUNT = 30, 2
 
 
@@ -281,7 +282,7 @@ def books(closes=None):
     else:
         verdict = "Verdict due at %d cases or on %s, whichever comes first; %d days and %d cases so far." % (VERDICT_CASES, (datetime.date.fromisoformat(BOOKS_START) + datetime.timedelta(days=VERDICT_DAYS)).isoformat(), days, n)
     b.update({"as_of": N.iso(), "books": res, "verdict": verdict, "stake": STAKE,
-              "method": "Each idea the action list would buy on a day goes into its book once, with $%.0f at that day's price; the S&P 500 fund gets the same $%.0f the same day. Fees 0.25%% (at least $1) on the way in and out. Results to today's price; paper only." % (STAKE, STAKE)})
+              "method": "Each idea the action list would buy on a day goes into its book once, with $%.0f at that day's price; the S&P 500 fund gets the same $%.0f the same day. Fees counted at 2 cents on the way in and out (the first 10 trades a month are really free). Results to today's price; paper only." % (STAKE, STAKE)})
     N.wj("state/news/books.json", b)
     return b
 

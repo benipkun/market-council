@@ -46,14 +46,26 @@ class Fees(unittest.TestCase):
         self.assertEqual(A.fee(5000.0, 0.0, 0.02), 0.02)
 
     def test_quant_lab_fee_rate_on_a_small_order(self):
-        self.assertAlmostEqual(Q.fee_rate(100.0), 0.01)
+        self.assertAlmostEqual(Q.fee_rate(100.0), 0.0002)
 
-    @unittest.expectedFailure
-    def test_every_module_uses_one_fee_schedule(self):
-        # OPEN, Ben's decision: live cards use his real plan (about 2 cents), other modules 0.25% with $1 or $1.12.
-        import decide, files, lab, plans
-        mins = {decide.FEE_MIN, files.FEE_MIN, lab.FEE_MIN, plans.FEE_MIN, Q.FEE_MIN, AL.FEE_MIN}
-        self.assertEqual(len(mins), 1, mins)
+    def test_every_live_module_uses_one_fee_schedule(self):
+        # Ben, 24 Nov 2026: 10 free trades, then 2 cents. The lab's back-tests keep 0.25% as a deliberate stress test.
+        import decide, fees, files
+        self.assertEqual({decide.FEE_MIN, files.FEE_MIN, Q.FEE_MIN, AL.FEE_MIN}, {fees.AFTER_FREE})
+        self.assertEqual({decide.FEE_PCT, files.FEE_RATE, Q.FEE, AL.FEE_PCT}, {0.0})
+
+    def test_the_first_ten_trades_of_a_month_are_free(self):
+        import fees
+        self.assertEqual(fees.fee_now(9), 0.0)
+        self.assertEqual(fees.fee_now(10), 0.02)
+
+    def test_trades_are_counted_by_month(self):
+        import fees
+        e = [{"action": "buy", "status": "applied", "at": "2026-11-30T10:00:00Z"}, {"action": "sell", "status": "applied", "at": "2026-12-01T10:00:00Z"},
+             {"action": "deposit", "status": "applied", "at": "2026-12-01T11:00:00Z"}, {"action": "cash", "status": "applied", "at": "2026-12-01T11:00:00Z"},
+             {"action": "buy", "status": "rejected", "at": "2026-12-02T10:00:00Z"}, {"action": "buy", "status": "applied", "undone_by": "x", "at": "2026-12-02T10:00:00Z"}]
+        self.assertEqual(fees.trades_in_month(e, "2026-12-15"), 1)
+        self.assertEqual(fees.trades_in_month(e, "2026-11-15"), 1)
 
 
 class OrderSizes(unittest.TestCase):
