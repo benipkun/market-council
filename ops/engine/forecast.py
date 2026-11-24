@@ -644,6 +644,7 @@ def run(shares, ctx, meta, targets, limits, load, save):
     for s in shares:
         s["last"] = cal[s["b"] - 1]
     rng = np.random.default_rng(SEED)
+    rng_screen = np.random.default_rng(SEED + 1)
     tab, per = pooled(shares, ctx)
     # 1. score what has come due, before anything new is said
     log = read_json("state/forecasts/log.json", {"entries": []})
@@ -674,7 +675,8 @@ def run(shares, ctx, meta, targets, limits, load, save):
             out_t[t] = {"none": "No forecast: the price history for %s stops at %s." % (t, s["last"])}
             continue
         try:
-            rec, logs = share_forecast(s, ctx, tab, per, shares, opts.get(t), plans.get(t), rf, adjust, rng)
+            # screened shares draw from their own stream, so the scored record's numbers do not depend on how many were screened
+            rec, logs = share_forecast(s, ctx, tab, per, shares, opts.get(t), plans.get(t), rf, adjust, rng if t in logged else rng_screen)
             rec["name"], rec["held"] = (meta.get(t) or {}).get("name") or t, t in held
             out_t[t] = rec
             if t in logged:

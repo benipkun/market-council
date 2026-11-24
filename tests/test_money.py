@@ -501,6 +501,30 @@ class UnknownChecks(unittest.TestCase):
         self.assertFalse(r["qualifies"])
 
 
+class OutageKeepsTheBar(unittest.TestCase):
+    # review, 24 Nov 2026: a source that did not answer must not make the screen easier to pass
+    def rising(self):
+        return [100.0 * (1.001 ** i) for i in range(300)]
+
+    def test_a_failed_insider_lookup_keeps_the_mark_at_five(self):
+        import strategy as S
+        kh = [{"recent_activity": "Add 5%"}, {"recent_activity": ""}]
+        r = S.score_checks(None, None, 0.2, self.rising(), 0.05, None, kh, {"surprise_pct": -1.0, "move_5d": 0.01})
+        self.assertEqual((r["known"], r["score"], r["pass_mark"], r["qualifies"]), (5, 4, 5, False))
+
+    def test_a_failed_holders_lookup_keeps_the_mark_at_five(self):
+        import strategy as S
+        r = S.score_checks(None, None, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 1, "buy_value_90d": 10.0}, None, {"surprise_pct": -1.0, "move_5d": 0.01})
+        self.assertEqual((r["pass_mark"], r["qualifies"]), (5, False))
+
+    def test_a_near_miss_uses_the_shares_own_mark(self):
+        import decide as D
+        r = {"t": "AAA", "qualifies": False, "score": 3, "of": 7, "known": 5, "pass_mark": 4, "name": "A", "trend_ok": True,
+             "checks": [{"id": "value", "pass": False, "needs": "x", "name": "v", "detail": "v"}, {"id": "drift", "pass": False, "needs": "y", "name": "d", "detail": "d"}]}
+        out = D.near_misses([r], {"rows": []}, {})
+        self.assertEqual(len(out[0]["missing"]), 1)
+
+
 class ForecastCoverage(unittest.TestCase):
     # 24 Nov 2026: 25 of the 30 shares that passed the checks had no forecast, so they could never become an action
     def test_every_share_that_qualifies_gets_a_forecast(self):

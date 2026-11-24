@@ -345,11 +345,12 @@ def money(v):
     return ("$%.1fm" % (v / 1e6)) if v >= 1e6 else ("$%.0fk" % (v / 1e3)) if v >= 1e3 else ("$%.0f" % v)
 
 
-def pass_mark_for(known):
-    """The same bar as five of seven, on the checks we can read. Under five readable checks a share cannot qualify."""
+def pass_mark_for(known, source_missing=False):
+    """The same bar as five of seven, on the checks we can read. Under five readable checks a share cannot qualify.
+    A source that did not answer (or does not cover the share) never lowers the bar: the mark stays at five."""
     if known < 5:
         return None
-    return -(-EDGE_PASS * known // 7)
+    return EDGE_PASS if source_missing else -(-EDGE_PASS * known // 7)
 
 
 def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, ages=None, dropped=None, fair_rng=None):
@@ -450,7 +451,7 @@ def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, age
     live = len([k for k in checks if not k.get("dropped")])
     known = len([k for k in checks if k["pass"] is not None])
     # Ben, 24 Nov 2026: a check we cannot read is neither a pass nor a fail, so the pass mark follows the checks we can read
-    need = pass_mark_for(known)
+    need = pass_mark_for(known, nb is None or kh is None)
     score = len([k for k in checks if k["pass"]])
     trend_ok = [k for k in checks if k["id"] == "trend"][0]["pass"] is True
     return {"score": score, "of": live, "known": known, "pass_mark": need if need is not None else EDGE_PASS,
@@ -539,7 +540,7 @@ def main():
                               "weight_in_force": r4(max(0.0, 1.0 - float(np.sum(tw_force))))}}
     out["edge"] = {"max": EDGE_MAX, "pass_mark": EDGE_PASS, "rows": edge,
                    "picks": [{"t": p["t"], "weight": r4(p["weight"]), "score": p["score"], "stop_pct": r4(p["stop_pct"])} for p in picks],
-                   "note": "A share qualifies with %d of 7 checks passed, and the trend check must be one of them. Checks with no data count as not passed." % EDGE_PASS}
+                   "note": "A share qualifies with %d of 7 checks passed, and the trend check must be one of them. A check we cannot read is neither a pass nor a fail: the mark is the same share of the checks we can read, and it stays at five when a data source did not answer." % EDGE_PASS}
     target = [{"t": CORE[j][0], "name": CORE[j][1], "eu": CORE[j][3], "kind": "core", "weight": r4(float(tw_now[j]) * core_part)} for j in range(n)]
     target += [{"t": p["t"], "name": (assets.get(p["t"]) or {}).get("name") or p["t"], "eu": None, "kind": "share", "weight": r4(p["weight"])} for p in picks]
     target.append({"t": SAFE[0], "name": SAFE[1], "eu": SAFE[3], "kind": "parked", "weight": r4(max(0.0, 1.0 - sum(x["weight"] for x in target)))})

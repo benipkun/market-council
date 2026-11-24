@@ -1,5 +1,5 @@
 # The live app is published only after the tests pass (24 Nov 2026). Needs Settings > Pages > Source: GitHub Actions.
-# Until that one setting is changed this job has no effect on the live site.
+# Until that one setting is changed this job tests only and skips publishing, so it stays green.
 name: Publish the app
 on:
   push:
@@ -14,6 +14,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      publish: ${{ steps.source.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,15 +29,25 @@ jobs:
       - run: '[ ! -f tests/test_money.py ] || python tests/test_money.py'
       - name: Check every app script parses
         run: for f in mc/*.js; do node --check "$f" || exit 1; done
+      - name: Is Pages set to publish from this job?
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          b=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true)
+          if [ "$b" = "workflow" ]; then echo "publish=yes" >> "$GITHUB_OUTPUT"; else echo "publish=no" >> "$GITHUB_OUTPUT"; echo "Pages still publishes from the branch."; fi
       - name: Build the site folder
+        if: steps.source.outputs.publish == 'yes'
         run: |
           mkdir _site
           cp -r index.html sw.js manifest.webmanifest apple-touch-icon.png icon-192.png icon-512.png .nojekyll mc _site/
       - uses: actions/upload-pages-artifact@v3
+        if: steps.source.outputs.publish == 'yes'
         with:
           path: _site
   publish:
     needs: test
+    if: needs.test.outputs.publish == 'yes'
     runs-on: ubuntu-latest
     permissions:
       pages: write

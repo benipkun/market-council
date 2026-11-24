@@ -50,7 +50,7 @@ def fix_sector(t, sector, industry=""):
 ROOT = os.environ.get("MC_ROOT", ".")
 FEE_PCT, FEE_MIN = 0.0025, 1.12          # the broker's fee: 0.25% of the order, at least one euro, each way
 TAX_RATE = 0.15                          # Hungarian personal income tax on share gains; losses this year offset gains
-MIN_ORDER = 100.0                        # below this the minimum fee costs more than 1% each way
+MIN_ORDER = 100.0                        # the smallest order worth placing (Ben's fee is now 0 to 2 cents, so this is a size floor, not a fee rule)
 FOOT = "Output of your own system's rules and estimates. You decide and place every order."
 STALE_FEEDS = ("desk", "screen", "quant", "books")
 NOT_A_BUY = "Not an action today: "
@@ -1032,7 +1032,7 @@ def plan_amount(usd, ctx, label=None):
     if not acts:
         acts.append(hold_top(why_nothing(cands, ctx) + " Keep the money as cash.", ctx))
     elif left > 0.5:
-        acts.append({"type": "HOLD", "ticker": None, "usd": round(left, 2), "line": "HOLD the remaining $%s as cash (too small for an order whose fee stays under 1%%)." % money(left)})
+        acts.append({"type": "HOLD", "ticker": None, "usd": round(left, 2), "line": "HOLD the remaining $%s as cash (under the $100 smallest order)." % money(left)})
     return number(acts)
 
 

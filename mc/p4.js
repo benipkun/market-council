@@ -64,7 +64,7 @@ det("Each half of the test on its own",'<div class="ox"><table class="mt p3w"><t
 det("Does it hang on the exact settings?",M.kv("Runs with nearby settings",esc(rb.runs))+M.kv("Return a year, lowest / middle / highest",sg(rb.cagr[0],1)+" / "+sg(rb.cagr[1],1)+" / "+sg(rb.cagr[2],1))+
 M.kv("Worst fall, deepest / middle / shallowest",fall(rb.mdd[0])+" / "+fall(rb.mdd[1])+" / "+fall(rb.mdd[2]))+M.kv("Runs that stayed inside your limit",pc(rb.within_limit_share))+'<div class="src">'+esc(rb.what)+'</div>'),
 esc(bt.method)+" "+esc(bt.income_note)+" Limits: "+esc(bt.limits.join(" "))+" "+M.upd(s.as_of)+".");
-var ed=s.edge,er=ed.rows.map(function(r){return det('<b style="color:var(--tx)">'+esc(r.t)+"</b> "+MID+" "+r.score+" of "+r.of+(r.qualifies?' <span class="stg live">QUALIFIES</span>':"")+(r.held?' <span class="fl">held</span>':""),
+var ed=s.edge,er=ed.rows.map(function(r){return det('<b style="color:var(--tx)">'+esc(r.t)+"</b> "+MID+" "+r.score+" of "+(r.known||r.of)+(r.qualifies?' <span class="stg live">QUALIFIES</span>':"")+(r.held?' <span class="fl">held</span>':""),
 r.checks.map(function(c){return '<div class="p4k"><span>'+esc(c.name)+'<br><span class="fl">'+esc(mn(c.detail))+'</span></span><b>'+(c.pass===true?"PASS":(c.pass===false?"FAIL":"NO DATA"))+'</b></div>';}).join("")+
 '<div class="gap"><button class="btn sm" data-mc="pos" data-t="'+esc(r.t)+'">Open '+esc(r.t)+'</button></div>');}).join("");
 h+=M.blk("SHARE SCORECARD",M.tag(s.as_of,14),'<div class="fl" style="font-size:12px">'+esc(ed.note)+" Qualifying shares share at most "+pc(ed.max)+" of the portfolio.</div>"+

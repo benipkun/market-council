@@ -750,14 +750,14 @@ def live_score(shares, ctx):
 # ---------------------------------------------------------------- everything else a card depends on
 def other_checks():
     lab, strat = E.rj("state/lab.json", {}) or {}, E.rj("state/strategy.json", {}) or {}
-    out = [{"id": "bar", "name": "The bar: five of seven, and the trend check must pass",
+    out = [{"id": "bar", "name": "The bar: five of seven on what we can read, and the trend check must pass",
             "what": "A share becomes a card only when it passes at least five of the seven checks and trades above its 200-day average.",
             "rule": "Score = number of checks passed. Card when score is 5 or more and the trend check is one of the passes. The best three by score, then by how far the price is under our fair value, become cards; the others are listed.",
             "record": "The full seven-check score has no history yet (see the combined table); it is logged daily from October 2026."},
            {"id": "fees", "name": "Fee test",
             "what": "Whether the trade can pay for its own costs at your broker at a given amount.",
-            "rule": "Fees = 0.25% of each order, at least one euro (about $1.12), for the buy, the later sale and the sale that funds it. A scorecard idea counts as paying when fees take less than a tenth of the planned gain; a short-term rule when its measured average result per trade is larger than the fees.",
-            "record": "Arithmetic, not a forecast. Check the fee in your broker's app: the free trades in your plan are not counted."},
+            "rule": "Fees = your plan: 10 free trades a month, then 2 cents, for the buy, the later sale and the sale that funds it. A scorecard idea counts as paying when fees take less than a tenth of the planned gain; a short-term rule when its measured average result per trade is larger than the fees.",
+            "record": "Arithmetic, not a forecast. Check the fee in your broker's app."},
            {"id": "stops", "name": "Stop-loss and take-profit on scorecard cards",
             "what": "How far the price may fall before the idea is wrong, and where the gain is taken.",
             "rule": "Stop = twice the share's 20-day volatility scaled to ten trading days, at least 5% under the entry. Take-profit = twice the stop distance above the entry.",
