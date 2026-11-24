@@ -984,6 +984,11 @@ def why_nothing(cands, ctx):
         money_part = ("and $%.0f of free cash is under the $%d minimum order, so it waits; new money goes to the S&P 500 fund (core first)" % (cash, MIN_ORDER)
                       if cash < MIN_ORDER else "so new money goes to the S&P 500 fund (core first)")
         return "No stock idea has proven itself on paper yet (each signal needs %d paper ideas at the three-month mark that beat the S&P 500 fund after fees), %s." % (PR.PAPER_MIN, money_part)
+    # the real reason when money is what is missing (23 Nov 2026): never "no idea makes money" next to ideas that are expected to
+    waiting = sorted([x for x in cands if (x.get("edge") or 0) > 0 and "no cash" in str((x.get("held_back") or [""])[0])], key=lambda x: -x["edge"])
+    if waiting:
+        return "No free cash ($%.2f), so nothing can be paid for today. Waiting for your next money (expected result after fees, an estimate): %s." % (
+            float(ctx.get("free_cash") or 0), ", ".join("%s %+.1f%%" % (x["t"], 100 * x["edge"]) for x in waiting[:3]))
     parts = ["%s: %s" % (x["t"], reason(x)) for x in cands[:6]]
     return "No idea is expected to make money after fees. " + "; ".join(parts) + "."
 

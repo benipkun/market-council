@@ -67,7 +67,7 @@ jobs:
         run: pip install --quiet numpy scipy
       # The engine only runs if its key numbers still come out right on known inputs.
       - name: Run the tests
-        run: python _code/tests/test_numbers.py
+        run: python _code/tests/test_numbers.py && { [ ! -f _code/tests/test_money.py ] || python _code/tests/test_money.py; }
       - name: Restore the last good price files
         uses: actions/cache@v4
         with:

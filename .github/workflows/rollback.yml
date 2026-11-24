@@ -1,0 +1,40 @@
+# One-step rollback (24 Nov 2026). Actions > Rollback > Run workflow. Leave the box empty for the release before the
+# current one, or type a release tag. It restores the app, engine and tests of that release as a new commit on main.
+# History is kept, so a rollback can itself be undone. Workflow files are not restored.
+name: Rollback
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty = the one before the latest)"
+        required: false
+permissions:
+  contents: write
+concurrency:
+  group: rollback
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Restore the release
+        env:
+          WANT: ${{ inputs.tag }}
+        run: |
+          cur=-
+          if [ -n "$WANT" ]; then t="$WANT"; else read -r t cur <<< "$(python3 ops/release_pick.py)"; fi
+          case "$t" in release-*) ;; *) echo "No release to go back to."; exit 1;; esac
+          git rev-parse -q --verify "refs/tags/$t" >/dev/null || { echo "No such release."; exit 1; }
+          git rm -rq --ignore-unmatch index.html sw.js mc ops tests
+          git checkout "$t" -- index.html sw.js mc ops tests
+          git config user.name "Market Council Rollback"
+          git config user.email "rollback@market-council.local"
+          if git diff --cached --quiet; then echo "Already at $t."; exit 0; fi
+          git commit -q -m "Rollback to $t"
+          git push -q origin HEAD:main
+          # the release rolled back from is never chosen again
+          if [ "$cur" != "-" ]; then git tag "bad-$cur" && git push -q origin "bad-$cur"; fi
+          echo "Rolled back to $t"

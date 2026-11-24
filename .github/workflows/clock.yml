@@ -29,7 +29,7 @@ jobs:
           R: ${{ github.repository }}
         run: |
           started() {   # minutes since the newest run of a workflow was created (999 if none)
-            t=$(gh run list -R "$R" -w "$1" -L 1 --json createdAt -q '.[0].createdAt' 2>/dev/null)
+            t=$(gh run list -R "$R" -w "$1" -L 1 --json createdAt -q '.[0].createdAt' 2>/dev/null) || { echo 0; return; }   # API trouble: start nothing this minute
             [ -n "$t" ] && echo $(( ($(date +%s) - $(date -d "$t" +%s)) / 60 )) || echo 999
           }
           end=$(( $(date +%s) + 330 * 60 ))
@@ -37,6 +37,10 @@ jobs:
           while [ "$(date +%s)" -lt "$end" ]; do
             if [ "$(started watch.yml)" -ge 28 ]; then
               gh workflow run watch.yml -R "$R" && echo "$(date -u +%H:%M) health and changes check started"
+            fi
+            # phone messages: GitHub skipped the five-minute schedule for hours on 23 Nov 2026
+            if [ "$(started listen.yml)" -ge 10 ]; then
+              gh workflow run listen.yml -R "$R" && echo "$(date -u +%H:%M) phone message pickup started"
             fi
             H=$(date -u +%H); M=$(date -u +%M); D=$(date -u +%u); slot="$(date -u +%F)-$H"
             if [ "$D" -le 5 ] && { [ "$H" = 06 ] || [ "$H" = 13 ] || [ "$H" = 21 ]; } && [ "${M#0}" -ge 40 ] && ! echo "$done_slots" | grep -q "$slot"; then
