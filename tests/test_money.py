@@ -46,14 +46,26 @@ class Fees(unittest.TestCase):
         self.assertEqual(A.fee(5000.0, 0.0, 0.02), 0.02)
 
     def test_quant_lab_fee_rate_on_a_small_order(self):
-        self.assertAlmostEqual(Q.fee_rate(100.0), 0.01)
+        self.assertAlmostEqual(Q.fee_rate(100.0), 0.0002)
 
-    @unittest.expectedFailure
-    def test_every_module_uses_one_fee_schedule(self):
-        # OPEN, Ben's decision: live cards use his real plan (about 2 cents), other modules 0.25% with $1 or $1.12.
-        import decide, files, lab, plans
-        mins = {decide.FEE_MIN, files.FEE_MIN, lab.FEE_MIN, plans.FEE_MIN, Q.FEE_MIN, AL.FEE_MIN}
-        self.assertEqual(len(mins), 1, mins)
+    def test_every_live_module_uses_one_fee_schedule(self):
+        # Ben, 24 Nov 2026: 10 free trades, then 2 cents. The lab's back-tests keep 0.25% as a deliberate stress test.
+        import decide, fees, files
+        self.assertEqual({decide.FEE_MIN, files.FEE_MIN, Q.FEE_MIN, AL.FEE_MIN}, {fees.AFTER_FREE})
+        self.assertEqual({decide.FEE_PCT, files.FEE_RATE, Q.FEE, AL.FEE_PCT}, {0.0})
+
+    def test_the_first_ten_trades_of_a_month_are_free(self):
+        import fees
+        self.assertEqual(fees.fee_now(9), 0.0)
+        self.assertEqual(fees.fee_now(10), 0.02)
+
+    def test_trades_are_counted_by_month(self):
+        import fees
+        e = [{"action": "buy", "status": "applied", "at": "2026-11-30T10:00:00Z"}, {"action": "sell", "status": "applied", "at": "2026-12-01T10:00:00Z"},
+             {"action": "deposit", "status": "applied", "at": "2026-12-01T11:00:00Z"}, {"action": "cash", "status": "applied", "at": "2026-12-01T11:00:00Z"},
+             {"action": "buy", "status": "rejected", "at": "2026-12-02T10:00:00Z"}, {"action": "buy", "status": "applied", "undone_by": "x", "at": "2026-12-02T10:00:00Z"}]
+        self.assertEqual(fees.trades_in_month(e, "2026-12-15"), 1)
+        self.assertEqual(fees.trades_in_month(e, "2026-11-15"), 1)
 
 
 class OrderSizes(unittest.TestCase):
@@ -449,6 +461,90 @@ class RollbackChoice(unittest.TestCase):
         for f, path in (("tests.yml", "tests/test_money.py"), ("engine.yml", "_code/tests/test_money.py")):
             text = open(os.path.join(HERE, "..", ".github", "workflows", f), encoding="utf-8").read()
             self.assertIn("[ ! -f %s ] ||" % path, text)
+
+
+class UnknownChecks(unittest.TestCase):
+    # Ben, 24 Nov 2026: missing data must not count against a share. The pass mark follows the checks we can actually read.
+    def test_pass_marks_by_known_checks(self):
+        import strategy as S
+        self.assertEqual([S.pass_mark_for(k) for k in (7, 6, 5)], [5, 5, 4])
+
+    def test_too_few_known_checks_never_qualify(self):
+        import strategy as S
+        self.assertIsNone(S.pass_mark_for(4))
+
+    def rising(self):
+        return [100.0 * (1.001 ** i) for i in range(300)]
+
+    def test_no_insider_trades_is_unknown_not_a_fail(self):
+        import strategy as S
+        r = S.score_checks(20.0, 150.0, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 0, "open_market_sales_90d": 0}, None, None)
+        c = [x for x in r["checks"] if x["id"] == "insiders"][0]
+        self.assertIsNone(c["pass"])
+
+    def test_insider_selling_is_still_a_fail(self):
+        import strategy as S
+        r = S.score_checks(20.0, 150.0, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 0, "open_market_sales_90d": 2, "sale_value_90d": 5000.0}, None, None)
+        self.assertIs([x for x in r["checks"] if x["id"] == "insiders"][0]["pass"], False)
+
+    def test_a_share_with_four_of_five_known_qualifies(self):
+        import strategy as S
+        kh = [{"recent_activity": "Add 5%"}, {"recent_activity": ""}]
+        r = S.score_checks(None, None, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 0, "open_market_sales_90d": 0}, kh, {"surprise_pct": -1.0, "move_5d": 0.01})
+        self.assertEqual((r["known"], r["score"], r["pass_mark"], r["qualifies"]), (5, 4, 4, True))
+
+    def test_a_share_without_its_trend_never_qualifies(self):
+        import strategy as S
+        px = [200.0 - 0.3 * i for i in range(300)]
+        kh = [{"recent_activity": "Add"}, {"recent_activity": "Add"}]
+        r = S.score_checks(20.0, 150.0, 0.2, px, -0.9, {"open_market_buys_90d": 1, "buy_value_90d": 10.0}, kh, {"surprise_pct": 1.0, "move_5d": 0.01})
+        self.assertFalse(r["qualifies"])
+
+
+class OutageKeepsTheBar(unittest.TestCase):
+    # review, 24 Nov 2026: a source that did not answer must not make the screen easier to pass
+    def rising(self):
+        return [100.0 * (1.001 ** i) for i in range(300)]
+
+    def test_a_failed_insider_lookup_keeps_the_mark_at_five(self):
+        import strategy as S
+        kh = [{"recent_activity": "Add 5%"}, {"recent_activity": ""}]
+        r = S.score_checks(None, None, 0.2, self.rising(), 0.05, None, kh, {"surprise_pct": -1.0, "move_5d": 0.01})
+        self.assertEqual((r["known"], r["score"], r["pass_mark"], r["qualifies"]), (5, 4, 5, False))
+
+    def test_a_failed_holders_lookup_keeps_the_mark_at_five(self):
+        import strategy as S
+        r = S.score_checks(None, None, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 1, "buy_value_90d": 10.0}, None, {"surprise_pct": -1.0, "move_5d": 0.01})
+        self.assertEqual((r["pass_mark"], r["qualifies"]), (5, False))
+
+    def test_a_near_miss_uses_the_shares_own_mark(self):
+        import decide as D
+        r = {"t": "AAA", "qualifies": False, "score": 3, "of": 7, "known": 5, "pass_mark": 4, "name": "A", "trend_ok": True,
+             "checks": [{"id": "value", "pass": False, "needs": "x", "name": "v", "detail": "v"}, {"id": "drift", "pass": False, "needs": "y", "name": "d", "detail": "d"}]}
+        out = D.near_misses([r], {"rows": []}, {})
+        self.assertEqual(len(out[0]["missing"]), 1)
+
+
+class ForecastCoverage(unittest.TestCase):
+    # 24 Nov 2026: 25 of the 30 shares that passed the checks had no forecast, so they could never become an action
+    def test_every_share_that_qualifies_gets_a_forecast(self):
+        import forecast as F
+        rows = [{"t": "AAA", "qualifies": True}, {"t": "BBB", "qualifies": False}, {"t": "HELD", "qualifies": True}]
+        self.assertEqual(F.target_list(["HELD"], ["CARD"], rows), ["HELD", "CARD", "AAA"])
+
+    def test_the_list_has_a_ceiling(self):
+        import forecast as F
+        rows = [{"t": "T%d" % i, "qualifies": True} for i in range(200)]
+        self.assertEqual(len(F.target_list(["HELD"], [], rows)), F.MAX_TARGETS)
+
+    def test_held_shares_survive_the_ceiling(self):
+        import forecast as F
+        held = ["H%d" % i for i in range(F.MAX_TARGETS + 5)]
+        self.assertEqual(F.target_list(held, [], [{"t": "AAA", "qualifies": True}]), held)
+
+    def test_the_clock_starts_the_nightly_job(self):
+        text = open(os.path.join(HERE, "..", ".github", "workflows", "clock.yml"), encoding="utf-8").read()
+        self.assertIn("gh workflow run history.yml", text)
 
 
 class PublicRepo(unittest.TestCase):

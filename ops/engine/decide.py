@@ -830,11 +830,12 @@ def cost_lines(t, liq, limit, sizes):
                      (" Daily trading: average of the last %d trading day%s." % (x.get("adv_days") or 0, "" if x.get("adv_days") == 1 else "s") if adv else " Daily trading volume did not load this run."))}
 
 # ---------------------------------------------------------------- the decision desk: every source of ideas, one kind of card
+import fees as FEES  # noqa: E402
 SIZES = (100.0, 500.0, 1000.0)     # shown on every card until Ben names his own amount
-FEE_PCT, FEE_MIN = 0.0, 0.02      # Ben's Revolut plan: about 1 to 2 cents a trade (his figure, 23 Oct 2026); past the plan's free trades Revolut charges 0.25%, at least one euro
+FEE_PCT, FEE_MIN = 0.0, FEES.AFTER_FREE      # Ben's Revolut plan: about 1 to 2 cents a trade (his figure, 23 Oct 2026); past the plan's free trades Revolut charges 0.25%, at least one euro
 PAY_SHARE = 0.10                   # where no measured average exists, an idea "pays" when fees take under a tenth of the planned gain
 DESK_PASS = 5
-DESK_SCORE_MAX = 6                 # the best six scorecard ideas become cards (three until 17 Nov 2026: Ben, too few picks); the others are listed underneath
+DESK_SCORE_MAX = 12                 # the best twelve scorecard ideas become cards (three until 17 Nov 2026, six until 24 Nov: too few picks); the others are listed underneath
 RULE_STOP = {"pullback": 0.08, "dip": 0.12}
 EASE = ["trend", "drift", "value", "insiders", "holders", "momentum", "quality"]
 
@@ -1098,7 +1099,7 @@ def desk_ideas(strat, lab_out, pos, keeps, lim, nav, log, answers, now, old=None
         ok = [c["name"] for c in r["checks"] if c["pass"]]
         no = ["%s (%s)" % (c["name"], c["detail"]) for c in r["checks"] if c["pass"] is not True]
         ideas.append(grey({"key": "SCORE:" + t, "kind": "idea", "source": "Scorecard" + (", wide screen" if r.get("source") == "wide screen" else ""), "source_id": "scorecard",
-                           "ticker": t, "name": r.get("name") or t, "title": "%s passes %d of %d checks (paper idea)" % (t, r["score"], r["of"]),
+                           "ticker": t, "name": r.get("name") or t, "title": "%s passes %d of %d readable checks (paper idea)" % (t, r["score"], r.get("known") or r["of"]),
                            "legs": [{"ticker": t, "name": r.get("name") or t, "weight": 1.0, "ref_price": r2(px), "limit": r2(entry), "eu": None}],
                            "entry": r2(entry), "stop": r2(entry * (1 - sp)), "take_profit": r2(entry * (1 + 2 * sp)), "stop_pct": r2(sp, 4), "target_pct": r2(2 * sp, 4),
                            "exit_rule": "Sell at the take-profit or at the stop, whichever comes first. Place the stop with the order.",
@@ -1106,7 +1107,7 @@ def desk_ideas(strat, lab_out, pos, keeps, lim, nav, log, answers, now, old=None
                            "sizes": srows, "min_size": smallest, "funding": f, "valid_days": 14, "rank": 50 + 5 * r["score"], "price_at": rows[-1][0], "stale": stale(rows[-1][0], now), "checks": r["checks"],
                            "profile_size": r2(min(lim["risk_per_trade"] * nav / sp, lim["stock_cap"] * nav)),
                            "why": ["Passes: " + "; ".join(ok) + "."], "against": ["Not passed: " + "; ".join(no) + "."] if no else [],
-                           "method": "Raised when a share passes at least five of the seven checks and trades above its 200-day average. Stop = twice the 20-day volatility over "
+                           "method": "Raised when a share passes the bar on the checks we can read (five of seven, four of five) and trades above its 200-day average. Stop = twice the 20-day volatility over "
                                      "ten days (at least 5%); take-profit = twice the stop distance. This source has no back-test; it is tracked on paper."}))
     # 2. short-term rules: only the entries made at the latest close
     tac = (lab_out or {}).get("tactical") or {}
@@ -1194,7 +1195,7 @@ def near_misses(edge, scr, tech):
             continue
         seen.add(r["t"])
         miss = sorted([c for c in r.get("checks") or [] if c.get("pass") is not True], key=lambda c: EASE.index(c["id"]) if c["id"] in EASE else 9)
-        need = max(1, DESK_PASS - r["score"])
+        need = max(1, int(r.get("pass_mark") or DESK_PASS) - r["score"])
         trend = [c for c in miss if c["id"] == "trend"]
         pick = (trend + [c for c in miss if c["id"] != "trend"])[:max(need, 1 if trend else 0)] if trend else miss[:need]
         if len(pick) < need:
@@ -1203,7 +1204,7 @@ def near_misses(edge, scr, tech):
         tk = (tech or {}).get(r["t"]) or {}
         if tk.get("fair_value") and tk.get("price"):
             gap = r2(float(tk["price"]) / float(tk["fair_value"]) - 1, 4)
-        pool.append({"t": r["t"], "name": r.get("name") or r["t"], "score": r["score"], "of": r["of"], "need": need, "source": r.get("source") or ("wide screen" if "region" in r else "watchlist"),
+        pool.append({"t": r["t"], "name": r.get("name") or r["t"], "score": r["score"], "of": r["of"], "known": r.get("known"), "need": need, "source": r.get("source") or ("wide screen" if "region" in r else "watchlist"),
                      "missing": [{"check": c["name"], "now": c["detail"], "needs": c.get("needs")} for c in pick],
                      "pipeline_gap": gap, "price": r.get("price"), "held": bool(r.get("held")), "order": 0 if r.get("held") else (2 if "region" in r else 1)})
     pool.sort(key=lambda x: (x["need"], x["order"], -x["score"], x["t"]))
@@ -1367,6 +1368,8 @@ def main():
         print("decide: no engine numbers or no snapshot")
         return
     uni, ledger = E.rj("ops/engine/universe.json", {}) or {}, E.rj("treasury/ledger.json", {}) or {}
+    global FEE_MIN
+    FEE_MIN = FEES.fee_now(FEES.trades_in_month(ledger.get("entries"), datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")))   # 10 free trades a month, then 2 cents
     ix, digest = E.rj("research/cards/index.json", {}) or {}, E.rj("digests/latest.json", {}) or {}
     council, lab_out = E.rj("state/council.json", {}) or {}, E.rj("state/lab.json", {}) or {}
     prev, smart = E.rj("state/decisions.json", {}) or {}, E.rj("state/smart_money.json", {}) or {}
@@ -1578,7 +1581,7 @@ def main():
     out["desk"] = {"near": near_misses((strat_out.get("edge") or {}).get("rows") or [], scr, digest.get("technicals") or {}), "funnel": fn,
                    "bar_check": bar_check(E.rj("state/paper.json", {})), "records": records, "sizes": list(SIZES), "also": also, "card_limit": DESK_SCORE_MAX,
                    "fee": {"pct": FEE_PCT, "min_usd": FEE_MIN, "pay_share": PAY_SHARE,
-                           "note": "About 1 to 2 cents a trade on your Revolut plan (your figure, 23 Oct 2026). If a month goes past the plan's free trades, Revolut charges 0.25% of the order, at least one euro."},
+                           "note": "Your Revolut plan (your figures, 24 Nov 2026): the first 10 trades of a month are free, then 2 cents a trade."},
                    "screen": {k: scr.get(k) for k in ("as_of", "status", "funnel", "limits", "added", "fails_by_check", "runtime_s", "method", "sources")} if scr else None}
     # the wide screen runs every trading day; if its last result is more than three days old it has failed, so say so on the desk and once on the phone
     scr_day = str(scr.get("as_of") or "")[:10]

@@ -199,7 +199,7 @@ def main():
     out.update({"funnel": funnel, "fails_by_check": fails, "rows": rows[:FINALISTS], "added": added, "runtime_s": int(time.time() - t0),
                 "method": "Stage 1: two years of daily prices for every share on the list (trend and momentum). Stage 2: company statements and the last earnings report for "
                           "the shares above their 200-day average (value, quality, earnings drift). Stage 3: insider trades and well-known holders for those passing at "
-                          "least three of the first five checks. A share qualifies with five of seven, and the trend check must be one of them.",
+                          "least three of the first five checks. A share qualifies with five of seven (four of five when two checks cannot be read), and the trend check must be one of them.",
                 "sources": "Nasdaq (share list, statements, earnings), CNBC (prices), OpenInsider (insider trades), Dataroma (well-known holders)."})
     E.wj("state/screen.json", out)
     print("screen ok: %d screened, %d with prices, %d in an upward trend, %d with statements, %d fully scored, %d qualify, %d handed on, %ds" % (

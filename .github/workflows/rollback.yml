@@ -10,6 +10,7 @@ on:
         required: false
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: rollback
 jobs:
@@ -23,6 +24,7 @@ jobs:
       - name: Restore the release
         env:
           WANT: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           cur=-
           if [ -n "$WANT" ]; then t="$WANT"; else read -r t cur <<< "$(python3 ops/release_pick.py)"; fi
@@ -37,4 +39,6 @@ jobs:
           git push -q origin HEAD:main
           # the release rolled back from is never chosen again
           if [ "$cur" != "-" ]; then git tag "bad-$cur" && git push -q origin "bad-$cur"; fi
+          # a push by this job starts no other job, so publish the restored app explicitly
+          gh workflow run deploy.yml --ref main -R "$GITHUB_REPOSITORY" || echo "Could not start the publish job."
           echo "Rolled back to $t"

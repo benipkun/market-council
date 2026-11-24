@@ -625,6 +625,16 @@ def write_json(rel, obj):
         f.write(NL)
 
 
+MAX_TARGETS = 60
+
+
+def target_list(held, desk, screen_rows):
+    """Holdings and open cards always; then every share that passed the checks, so it can become an action (24 Nov 2026)."""
+    base = list(dict.fromkeys([t for t in list(held) + list(desk) if t]))
+    extra = [r.get("t") for r in screen_rows or [] if r.get("qualifies") and r.get("t") and r.get("t") not in base]
+    return base + list(dict.fromkeys(extra))[:max(0, MAX_TARGETS - len(base))]
+
+
 def run(shares, ctx, meta, targets, limits, load, save):
     quant, dec, snap = E.rj("state/quant.json", {}) or {}, E.rj("state/decisions.json", {}) or {}, E.rj("treasury/snapshot.json", {}) or {}
     opts = (E.rj("state/options.json", {}) or {}).get("shares") or {}
@@ -634,6 +644,7 @@ def run(shares, ctx, meta, targets, limits, load, save):
     for s in shares:
         s["last"] = cal[s["b"] - 1]
     rng = np.random.default_rng(SEED)
+    rng_screen = np.random.default_rng(SEED + 1)
     tab, per = pooled(shares, ctx)
     # 1. score what has come due, before anything new is said
     log = read_json("state/forecasts/log.json", {"entries": []})
@@ -654,7 +665,8 @@ def run(shares, ctx, meta, targets, limits, load, save):
     held = [p.get("ticker") for p in snap.get("positions") or [] if p.get("ticker")]
     desk = [c.get("ticker") for c in dec.get("cards") or [] if c.get("status") == "open" and c.get("ticker")]
     out_t, new = {}, []
-    for t in list(dict.fromkeys(held + desk)):
+    logged = set(held + desk)      # only holdings and cards go into the scored record; screened shares get a forecast to rank them
+    for t in target_list(held, desk, (E.rj("state/screen.json", {}) or {}).get("rows")):
         s = by.get(t)
         if s is None:
             out_t[t] = {"none": "Not enough history to forecast this: no long price history for %s in the free source." % t}
@@ -663,10 +675,12 @@ def run(shares, ctx, meta, targets, limits, load, save):
             out_t[t] = {"none": "No forecast: the price history for %s stops at %s." % (t, s["last"])}
             continue
         try:
-            rec, logs = share_forecast(s, ctx, tab, per, shares, opts.get(t), plans.get(t), rf, adjust, rng)
+            # screened shares draw from their own stream, so the scored record's numbers do not depend on how many were screened
+            rec, logs = share_forecast(s, ctx, tab, per, shares, opts.get(t), plans.get(t), rf, adjust, rng if t in logged else rng_screen)
             rec["name"], rec["held"] = (meta.get(t) or {}).get("name") or t, t in held
             out_t[t] = rec
-            new += logs
+            if t in logged:
+                new += logs
         except Exception as e:
             out_t[t] = {"none": "The forecast for %s could not be worked out this run (%s)." % (t, type(e).__name__)}
             limits.append("Forecaster: %s failed (%s: %s)." % (t, type(e).__name__, str(e)[:100]))

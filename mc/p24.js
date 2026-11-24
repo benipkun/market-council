@@ -11,7 +11,7 @@ M.extra.qlab="state/qlab/index.json";
 var HELD=function(){return (((M.S&&M.S.treasury)||{}).positions||[]).map(function(p){return p.ticker;}).filter(Boolean);};
 var SER=["US 10-year yield","US 2-year yield","WTI oil","Brent oil","Gold","Copper","Natural gas","Wheat","US dollar index","VIX (expected S&P 500 volatility)","Euro in dollars","Bitcoin","Dollar in forint"];
 var T=[
- {id:"backtest",n:"1",name:"Backtester",what:"A rule against the S&P 500 fund, after Revolut fees (0.25%, at least $1).",before:"Built before: six rules on every holding, nightly (QUANT > NIGHTLY). New: any ticker, rule, years and order size.",
+ {id:"backtest",n:"1",name:"Backtester",what:"A rule against the S&P 500 fund, after your real fees (2 cents a trade; 10 a month are free).",before:"Built before: six rules on every holding, nightly (QUANT > NIGHTLY). New: any ticker, rule, years and order size.",
   f:[["ticker","Ticker","SPY"],["rule","Rule","trend200",["hold","trend200","cross","mom","dip","stop"]],["years","Years","10"],["amount","Order size $","1000"]]},
  {id:"signals",n:"2",name:"Signals lab",what:"Does an outside data series lead a share by 1 to 4 weeks?",before:"Built before: 13 series against your shares, nightly. New: any pair on request.",
   f:[["ticker","Ticker","UBER"],["series","Outside series",SER[0],SER]]},

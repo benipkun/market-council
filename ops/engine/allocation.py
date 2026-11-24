@@ -15,8 +15,12 @@ import glob
 import json
 import math
 import os
+import sys
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fees as F  # noqa: E402
 
 ROOT = os.environ.get("MC_ROOT", ".")
 PARTS = ("stocks", "bonds", "etfs")
@@ -26,7 +30,7 @@ DEFS = {"stocks": "Single company shares, including UBER.",
 BOND_FUNDS = ("SHY", "IEF", "TLT", "LQD", "TIP", "BNDX", "BND", "AGG", "VGIT", "IEI", "GOVT", "VCIT", "IBTA", "AGGG", "VAGF")
 INDEX_FUNDS = ("SPY", "VOO", "IVV", "SPLG", "CSPX", "VUSA", "SXR8", "VUAA", "VEA", "VWO", "XLP", "XLU", "XLV", "GLD", "QQQ", "VT", "VTI", "IWDA", "SWDA")
 BUY_FUND = {"bonds": "IEF", "etfs": "SPY"}          # what new money buys for a fund part (the funds the engine already prices)
-FEE_PCT, FEE_MIN, MIN_ORDER, TAX = 0.0025, 1.0, 100.0, 0.15
+FEE_PCT, FEE_MIN, MIN_ORDER, TAX = 0.0, F.AFTER_FREE, 100.0, 0.15
 
 
 def rj(rel, d=None):

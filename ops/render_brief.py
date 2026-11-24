@@ -355,7 +355,7 @@ def main():
             for x in near:
                 needs = "; ".join(str(obj(m).get("needs")) for m in arr(x.get("missing")) if obj(m).get("needs"))
                 rows += '<div class="kv"><span><b>{}</b><br>{}</span><span class="r">{} of {} checks<br><span class="note">needs {}</span></span></div>'.format(
-                    e(x.get("t")), e(x.get("name")), e(x.get("score")), e(x.get("of") or 7), e(needs or "more data"))
+                    e(x.get("t")), e(x.get("name")), e(x.get("score")), e(x.get("known") or x.get("of") or 7), e(needs or "more data"))
             body += '<div class="box">{}</div>'.format(rows)
         if grey:
             body += '<p class="note">{} more idea{} shown in the app as not a buy now, each with the reason (most often: the index fund is expected to do better after fees).</p>'.format(

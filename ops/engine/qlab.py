@@ -20,10 +20,11 @@ import re
 import numpy as np
 
 import engine as E
+import fees as FEES
 import lab
 import quant
 
-FEE, FEE_MIN = 0.0025, 1.0          # Revolut: 0.25% of the order, at least $1 (estimate, as in the rest of the engine)
+FEE, FEE_MIN = 0.0, FEES.AFTER_FREE          # Ben's plan, 24 Nov 2026: counted at 2 cents a trade (10 a month are free) (the rest of the engine)
 RF, ERP = 0.0365, 0.05              # risk-free rate and the engine's equity premium: return = RF + beta x ERP
 FEW = 20
 MAX_PER_RUN = 6
@@ -129,7 +130,7 @@ def t_backtest(inp):
                       ["First half vs fund", E.pc(h1), ""], ["Second half vs fund", E.pc(h2), ""], ["Time in the market", E.pc(tin, 0), "100%"]],
             "curve": {"dates": [dates[lab.WARM + int(i)] for i in idx], "rule": curve, "spy": lab.sample(seq)[1]}, "beats": beats,
             "method": "Rule: %s. It decides at the close and holds over the next day; out of the market the money earns nothing. "
-                      "Each change of position costs %.2f%% (Revolut 0.25%%, at least $1 on a $%.0f order). The S&P 500 fund is bought once "
+                      "Each change of position costs %.2f%% (2 cents a trade on a $%.0f order). The S&P 500 fund is bought once "
                       "and held over the same %s days. Split-adjusted closes without dividends. The test is cut in two halves; a rule shows "
                       "an edge only if it is ahead in both." % (dict((r[0], r[2]) for r in lab.RULES)[rule], 100 * c, amount, len(eq))}
 
