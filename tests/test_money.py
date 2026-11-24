@@ -463,6 +463,44 @@ class RollbackChoice(unittest.TestCase):
             self.assertIn("[ ! -f %s ] ||" % path, text)
 
 
+class UnknownChecks(unittest.TestCase):
+    # Ben, 24 Nov 2026: missing data must not count against a share. The pass mark follows the checks we can actually read.
+    def test_pass_marks_by_known_checks(self):
+        import strategy as S
+        self.assertEqual([S.pass_mark_for(k) for k in (7, 6, 5)], [5, 5, 4])
+
+    def test_too_few_known_checks_never_qualify(self):
+        import strategy as S
+        self.assertIsNone(S.pass_mark_for(4))
+
+    def rising(self):
+        return [100.0 * (1.001 ** i) for i in range(300)]
+
+    def test_no_insider_trades_is_unknown_not_a_fail(self):
+        import strategy as S
+        r = S.score_checks(20.0, 150.0, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 0, "open_market_sales_90d": 0}, None, None)
+        c = [x for x in r["checks"] if x["id"] == "insiders"][0]
+        self.assertIsNone(c["pass"])
+
+    def test_insider_selling_is_still_a_fail(self):
+        import strategy as S
+        r = S.score_checks(20.0, 150.0, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 0, "open_market_sales_90d": 2, "sale_value_90d": 5000.0}, None, None)
+        self.assertIs([x for x in r["checks"] if x["id"] == "insiders"][0]["pass"], False)
+
+    def test_a_share_with_four_of_five_known_qualifies(self):
+        import strategy as S
+        kh = [{"recent_activity": "Add 5%"}, {"recent_activity": ""}]
+        r = S.score_checks(None, None, 0.2, self.rising(), 0.05, {"open_market_buys_90d": 0, "open_market_sales_90d": 0}, kh, {"surprise_pct": -1.0, "move_5d": 0.01})
+        self.assertEqual((r["known"], r["score"], r["pass_mark"], r["qualifies"]), (5, 4, 4, True))
+
+    def test_a_share_without_its_trend_never_qualifies(self):
+        import strategy as S
+        px = [200.0 - 0.3 * i for i in range(300)]
+        kh = [{"recent_activity": "Add"}, {"recent_activity": "Add"}]
+        r = S.score_checks(20.0, 150.0, 0.2, px, -0.9, {"open_market_buys_90d": 1, "buy_value_90d": 10.0}, kh, {"surprise_pct": 1.0, "move_5d": 0.01})
+        self.assertFalse(r["qualifies"])
+
+
 class PublicRepo(unittest.TestCase):
     def test_no_record_folder_is_tracked(self):
         try:

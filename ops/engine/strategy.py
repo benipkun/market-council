@@ -345,6 +345,13 @@ def money(v):
     return ("$%.1fm" % (v / 1e6)) if v >= 1e6 else ("$%.0fk" % (v / 1e3)) if v >= 1e3 else ("$%.0f" % v)
 
 
+def pass_mark_for(known):
+    """The same bar as five of seven, on the checks we can read. Under five readable checks a share cannot qualify."""
+    if known < 5:
+        return None
+    return -(-EDGE_PASS * known // 7)
+
+
 def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, ages=None, dropped=None, fair_rng=None):
     # The seven checks, one place for the watchlist and the wide screen. Each check carries today's reading, the line it is
     # measured against, how far the reading is from that line, the age of its data and, when it fails, what would make it pass.
@@ -383,7 +390,7 @@ def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, age
         add("trend", "Price above its 200-day average", None, "not enough price history", "a year of price history")
     ins = ins or {}
     nb, bv, sv = ins.get("open_market_buys_90d"), ins.get("buy_value_90d") or 0, ins.get("sale_value_90d") or 0
-    add("insiders", "Insiders bought more than they sold in 90 days", (nb >= 1 and bv > sv) if nb is not None else None,
+    add("insiders", "Insiders bought more than they sold in 90 days", (None if (nb == 0 and not (ins.get("open_market_sales_90d") or 0)) else (nb >= 1 and bv > sv)) if nb is not None else None,   # no insider trade at all says nothing (Ben, 24 Nov 2026)
         ("%d purchases, %d sales" % (nb, ins.get("open_market_sales_90d") or 0)) if nb is not None else "no insider data",
         "an open-market purchase by an insider larger than recent sales" if nb is not None else "insider filings, which foreign companies do not make in the US",
         ("%d purchases worth %s, %d sales worth %s" % (nb, money(bv), ins.get("open_market_sales_90d") or 0, money(sv))) if nb is not None else None,
@@ -441,11 +448,13 @@ def score_checks(mos, fair, em, px, spy_mom, ins, kh, rv, next_results=None, age
             k.update({"pass": None, "dropped": True, "needs": None,
                       "detail": "dropped on %s: ideas that passed it did worse than the index fund and the average share" % (dropped[k["id"]] or {}).get("on")})
     live = len([k for k in checks if not k.get("dropped")])
-    need = EDGE_PASS if live >= 7 else max(3, -(-EDGE_PASS * live // 7))
+    known = len([k for k in checks if k["pass"] is not None])
+    # Ben, 24 Nov 2026: a check we cannot read is neither a pass nor a fail, so the pass mark follows the checks we can read
+    need = pass_mark_for(known)
     score = len([k for k in checks if k["pass"]])
     trend_ok = [k for k in checks if k["id"] == "trend"][0]["pass"] is True
-    return {"score": score, "of": live, "known": len([k for k in checks if k["pass"] is not None]), "pass_mark": need,
-            "qualifies": bool(score >= need and (trend_ok or "trend" in dropped)), "trend_ok": trend_ok, "checks": checks}
+    return {"score": score, "of": live, "known": known, "pass_mark": need if need is not None else EDGE_PASS,
+            "qualifies": bool(need is not None and score >= need and (trend_ok or "trend" in dropped)), "trend_ok": trend_ok, "checks": checks}
 
 def edge_scores(ix, spy_rows, lim, held):
     rows, spy = [], [v for d, v in spy_rows]
