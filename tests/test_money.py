@@ -501,6 +501,28 @@ class UnknownChecks(unittest.TestCase):
         self.assertFalse(r["qualifies"])
 
 
+class ForecastCoverage(unittest.TestCase):
+    # 24 Nov 2026: 25 of the 30 shares that passed the checks had no forecast, so they could never become an action
+    def test_every_share_that_qualifies_gets_a_forecast(self):
+        import forecast as F
+        rows = [{"t": "AAA", "qualifies": True}, {"t": "BBB", "qualifies": False}, {"t": "HELD", "qualifies": True}]
+        self.assertEqual(F.target_list(["HELD"], ["CARD"], rows), ["HELD", "CARD", "AAA"])
+
+    def test_the_list_has_a_ceiling(self):
+        import forecast as F
+        rows = [{"t": "T%d" % i, "qualifies": True} for i in range(200)]
+        self.assertEqual(len(F.target_list(["HELD"], [], rows)), F.MAX_TARGETS)
+
+    def test_held_shares_survive_the_ceiling(self):
+        import forecast as F
+        held = ["H%d" % i for i in range(F.MAX_TARGETS + 5)]
+        self.assertEqual(F.target_list(held, [], [{"t": "AAA", "qualifies": True}]), held)
+
+    def test_the_clock_starts_the_nightly_job(self):
+        text = open(os.path.join(HERE, "..", ".github", "workflows", "clock.yml"), encoding="utf-8").read()
+        self.assertIn("gh workflow run history.yml", text)
+
+
 class PublicRepo(unittest.TestCase):
     def test_no_record_folder_is_tracked(self):
         try:
