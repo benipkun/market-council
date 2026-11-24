@@ -58,7 +58,17 @@ def remark(snap, closes, now):
     changed = []
     for p in snap.get("positions") or []:
         d, q = closes.get(p.get("ticker"), (None, None))
-        if not q or q <= 0 or str(p.get("price_as_of") or "")[:10] > d:
+        if not q or q <= 0:
+            # no close for this share (one the engine does not price yet): its value must still be shares x the last
+            # price the books hold, never the cost a trade entry wrote as its value
+            lp = float(p.get("last_price") or 0)
+            if p.get("qty") not in (None, "") and lp > 0:
+                v = round(float(p["qty"]) * lp, 2)
+                if abs(v - float(p.get("market_value") or 0)) >= 0.01:
+                    p["market_value"] = v
+                    changed.append(p["ticker"])
+            continue
+        if str(p.get("price_as_of") or "")[:10] > d:
             continue
         lp = float(p.get("last_price") or 0)
         old_value = float(p.get("market_value") or 0)

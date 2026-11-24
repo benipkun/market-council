@@ -312,6 +312,16 @@ class NightlyRemark(unittest.TestCase):
         self.assertEqual(keeper.remark(s, {"NEW": ("2026-11-23", 80.0)}, "2026-11-23T22:00:00Z"), ["NEW"])
         self.assertEqual(s["nav"], 800.0)
 
+    def test_remark_values_a_share_without_a_close_at_shares_times_last_price(self):
+        import keeper
+        # a buy entry wrote the cost as the value and the share has no close: the value must follow shares x last price
+        s = {"cash": 0.0, "positions": [{"ticker": "NOCLOSE", "qty": 4, "last_price": 80.0, "market_value": 400.0, "cost_basis": 400.0}]}
+        self.assertEqual(keeper.remark(s, {}, "2026-01-02T01:00:00Z"), ["NOCLOSE"])
+        self.assertEqual(s["positions"][0]["market_value"], 320.0)
+        self.assertEqual(s["positions"][0]["cost_basis"], 400.0)            # cost is never touched
+        self.assertEqual(s["nav"], 320.0)
+        self.assertEqual(keeper.remark(s, {}, "2026-01-02T02:00:00Z"), [])  # already right: nothing to save
+
     def test_remark_without_a_share_count_still_scales(self):
         import keeper
         s = {"cash": 0.0, "positions": [{"ticker": "OLD", "qty": None, "last_price": 50.0, "market_value": 500.0, "price_as_of": "2026-11-20T21:00:00Z"}]}

@@ -618,7 +618,9 @@ class TradeCheck(unittest.TestCase):
             {"ticker": "BBB", "qty": 10, "market_value": 400.0, "last_price": 40.0, "cost_basis": 380.0}]})
         w("treasury/ledger.json", {"entries": [
             {"id": "T1", "at": "2026-10-29T09:00:00Z", "action": "buy", "ticker": "AAA", "usd": 600.0, "qty": 2, "price": 30.0, "status": "applied", "cash_after": 10.0, "why": "my own"},
-            {"id": "T2", "at": "2026-10-29T08:00:00Z", "action": "buy", "ticker": "CCC", "usd": 50.0, "qty": 1, "price": 50.0, "status": "applied", "cash_after": 610.0}]})
+            {"id": "T2", "at": "2026-10-29T08:00:00Z", "action": "buy", "ticker": "CCC", "usd": 50.0, "qty": 1, "price": 50.0, "status": "applied", "cash_after": 610.0},
+            {"id": "T3", "at": "2026-10-29T07:00:00Z", "action": "buy", "ticker": "DDD", "usd": 30.0, "qty": 1, "price": 30.0, "status": "applied", "cash_after": 660.0},
+            {"id": "T4", "at": "2026-10-29T07:00:00Z", "action": "sell", "ticker": "DDD", "usd": 31.0, "qty": 1, "price": 31.0, "status": "applied", "cash_after": 691.0}]})
         w("state/decisions.json", {"profile": {"limits": {"stock_cap": 0.3, "risk_per_trade": 0.015, "min_cash": 0.03}}, "cards": []})
         w("state/classes.json", {"AAA": {"type": "Stock", "sector": "Energy", "country": "US"}})
 
@@ -630,6 +632,8 @@ class TradeCheck(unittest.TestCase):
         self.assertEqual((c["books"], c["price"], c["size"], c["cash"], c["sector"], c["risk"]), ("ok", "warn", "warn", "warn", "warn", "warn"))
         self.assertEqual((t["AAA"]["status"], t["AAA"]["class"]["country"], t["AAA"]["origin"]), ("warn", "United States", "your own idea (my own)"))
         self.assertEqual(t["CCC"]["status"], "fail")                                # in the ledger, not in the holdings
+        dd = [x for x in o["trades"] if x["ticker"] == "DDD" and x["action"] == "buy"][0]
+        self.assertEqual(dict((c["name"], c["status"]) for c in dd["checks"])["books"], "ok")   # bought and sold again: not a books error
         self.assertEqual(TC.origin({"ticker": "X", "at": "2026-10-30T15:09:11Z", "action": "sell", "why": "App’s sudgestion"}, [])["kind"], "suggested")
         x = o["exposure"]
         self.assertAlmostEqual(sum(r["value"] for r in x["by_sector"]), 1000.0)     # every dollar is in one group, cash included

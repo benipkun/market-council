@@ -123,6 +123,10 @@ def check(e, ctx):
     if e["action"] == "buy":
         if pos and (num(pos.get("qty")) or 0) > 0:
             add("books", "ok", "In your books: %s shares worth $%.2f." % (("%.4f" % float(pos["qty"])).rstrip("0").rstrip("."), num(pos.get("market_value")) or 0))
+        elif any(x.get("ticker") == t and x.get("action") == "sell" and str(x.get("at")) >= str(e.get("at")) and x is not e
+                 for x in ctx.get("entries") or []):
+            # bought and sold again: not holding it is right, not a books error
+            add("books", "ok", "In your books: bought and sold again, so you no longer hold %s." % t)
         elif books_at and books_at < str(e.get("at")):
             add("books", "warn", "Your books were last updated before this trade (%s); the next bookkeeping run adds it." % books_at[:16])
         else:
@@ -221,7 +225,7 @@ def build(now=None):
             "conviction_left_out": any(p["kept"] for p in positions),
             "unknown": [p["ticker"] for p in positions if not (p.get("sector") and p.get("country") and p.get("type"))]}
     ctx = {"pos": pos, "nav": nav, "lim": (dec.get("profile") or {}).get("limits") or {}, "books_as_of": snap.get("as_of"), "quant": src["quant"],
-           "plans": plans, "class": cls, "src": src, "expo": expo}
+           "plans": plans, "class": cls, "src": src, "expo": expo, "entries": entries}
     trades = []
     for e in sorted(entries, key=lambda e: str(e.get("at")), reverse=True)[:10]:
         st, checks = check(e, ctx)
