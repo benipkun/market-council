@@ -2,6 +2,7 @@
 The one check against Ben's real standing decision runs only where the private records are present (the engine job)
 and compares two private files, so no private figure is written here.
 """
+import datetime
 import json
 import os
 import re
@@ -260,10 +261,10 @@ class ConvictionGuard(unittest.TestCase):
         text = open(doc, encoding="utf-8").read()
         m = re.search(r"Target \$([\d.]+), review date (\d+ \w+ \d{4})", text)
         k = (json.load(open(dec, encoding="utf-8")).get("keeps") or {}).get("UBER") or {}
-        self.assertEqual(float(k.get("target")), float(m.group(1)))
-        d = m.group(2).split()
-        months = {"Oct": "10"}
-        self.assertEqual(str(k.get("by") or k.get("review")), "%s-%s-%02d" % (d[2], months[d[1]], int(d[0])))
+        same_target = float(k.get("target")) == float(m.group(1))
+        self.assertTrue(same_target, "the target differs from the standing decision")
+        day = datetime.datetime.strptime(m.group(2), "%d %b %Y").strftime("%Y-%m-%d")
+        self.assertTrue(str(k.get("by") or k.get("review")) == day, "the review date differs from the standing decision")
 
 
 class ValueIsSharesTimesPrice(unittest.TestCase):
@@ -356,12 +357,98 @@ class PhoneDelivery(unittest.TestCase):
             os.makedirs(os.path.join(d, "outbox", "queue"))
             for n in ("a", "b"):
                 open(os.path.join(d, "outbox", "queue", n + ".json"), "w").write("{}")
-            open(os.path.join(d, "outbox", "sent.txt"), "w").write("")
+            open(os.path.join(d, "outbox", "sent.txt"), "w").write("# sent\n")
             failed = O.run(d, lambda name, msg: 200 if name == "a.json" else 500)
             self.assertEqual(failed, ["b.json"])
-            self.assertEqual(open(os.path.join(d, "outbox", "sent.txt")).read().split(), ["a.json"])
+            self.assertEqual(open(os.path.join(d, "outbox", "sent.txt")).read().split(), ["#", "sent", "a.json"])
         finally:
             shutil.rmtree(d)
+
+
+class DeliveryBadInput(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.d, "outbox", "queue"))
+
+    def tearDown(self):
+        shutil.rmtree(self.d)
+
+    def put(self, name, text):
+        with open(os.path.join(self.d, "outbox", "queue", name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def sent(self):
+        return open(os.path.join(self.d, "outbox", "sent.txt"), encoding="utf-8").read().split()
+
+    def test_a_bad_file_does_not_block_the_next_message(self):
+        import outbox_send as O
+        self.put("a.json", "[1, 2]")
+        self.put("b.json", "not json")
+        self.put("c.json", "{}")
+        open(os.path.join(self.d, "outbox", "sent.txt"), "w").write("# sent\n")
+        got = []
+        self.assertEqual(O.run(self.d, lambda n, m: got.append(n) or 200), [])
+        self.assertEqual(got, ["c.json"])
+
+    def test_a_bad_file_is_not_retried_for_ever(self):
+        import outbox_send as O
+        self.put("a.json", "[1, 2]")
+        open(os.path.join(self.d, "outbox", "sent.txt"), "w").write("# sent\n")
+        O.run(self.d, lambda n, m: 200)
+        self.assertIn("bad:a.json", self.sent())
+        self.assertEqual(O.pending(["a.json"], O.read_sent(os.path.join(self.d, "outbox", "sent.txt"))), [])
+
+    def test_an_error_while_sending_keeps_the_message_for_next_time(self):
+        import outbox_send as O
+        self.put("a.json", "{}")
+        self.put("b.json", "{}")
+        open(os.path.join(self.d, "outbox", "sent.txt"), "w").write("# sent\n")
+
+        def send(n, m):
+            if n == "a.json":
+                raise ValueError("boom")
+            return 200
+        self.assertEqual(O.run(self.d, send), ["a.json"])
+        self.assertIn("b.json", self.sent())
+
+    def test_an_emptied_list_does_not_flood_the_phone(self):
+        import outbox_send as O
+        self.put("a.json", "{}")
+        open(os.path.join(self.d, "outbox", "sent.txt"), "w").write("")
+        got = []
+        O.run(self.d, lambda n, m: got.append(n) or 200)
+        self.assertEqual(got, [])
+        self.assertIn("a.json", self.sent())
+
+
+class RollbackChoice(unittest.TestCase):
+    # newest first; the signature stands for the content of the app and engine at that release
+    SIG = {"r4": "D", "r3": "C", "r2": "B", "r1": "A"}
+
+    def pick(self, head, bad=()):
+        import release_pick as R
+        return R.pick(["r4", "r3", "r2", "r1"], head, self.SIG.get, set(bad))
+
+    def test_goes_to_the_release_before_the_live_one(self):
+        self.assertEqual(self.pick("D"), ("r3", "r4"))
+
+    def test_an_untested_live_version_goes_to_the_newest_release(self):
+        self.assertEqual(self.pick("X"), ("r4", None))
+
+    def test_a_second_press_goes_one_further_back(self):
+        self.assertEqual(self.pick("C", bad=["r4"]), ("r2", "r3"))
+
+    def test_a_release_rolled_back_from_is_never_chosen_again(self):
+        self.assertEqual(self.pick("X", bad=["r4"]), ("r3", None))
+
+    def test_nothing_to_go_back_to(self):
+        import release_pick as R
+        self.assertEqual(R.pick(["r1"], "A", {"r1": "A"}.get, set()), (None, "r1"))
+
+    def test_workflows_survive_a_release_without_the_money_tests(self):
+        for f, path in (("tests.yml", "tests/test_money.py"), ("engine.yml", "_code/tests/test_money.py")):
+            text = open(os.path.join(HERE, "..", ".github", "workflows", f), encoding="utf-8").read()
+            self.assertIn("[ ! -f %s ] ||" % path, text)
 
 
 class PublicRepo(unittest.TestCase):

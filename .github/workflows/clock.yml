@@ -29,7 +29,7 @@ jobs:
           R: ${{ github.repository }}
         run: |
           started() {   # minutes since the newest run of a workflow was created (999 if none)
-            t=$(gh run list -R "$R" -w "$1" -L 1 --json createdAt -q '.[0].createdAt' 2>/dev/null)
+            t=$(gh run list -R "$R" -w "$1" -L 1 --json createdAt -q '.[0].createdAt' 2>/dev/null) || { echo 0; return; }   # API trouble: start nothing this minute
             [ -n "$t" ] && echo $(( ($(date +%s) - $(date -d "$t" +%s)) / 60 )) || echo 999
           }
           end=$(( $(date +%s) + 330 * 60 ))

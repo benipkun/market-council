@@ -24,9 +24,9 @@ jobs:
         env:
           WANT: ${{ inputs.tag }}
         run: |
-          t="$WANT"
-          if [ -z "$t" ]; then t=$(git tag --list 'release-*' --sort=-creatordate | sed -n 2p); fi
-          case "$t" in release-*) ;; *) echo "No release tag to go back to."; exit 1;; esac
+          cur=-
+          if [ -n "$WANT" ]; then t="$WANT"; else read -r t cur <<< "$(python3 ops/release_pick.py)"; fi
+          case "$t" in release-*) ;; *) echo "No release to go back to."; exit 1;; esac
           git rev-parse -q --verify "refs/tags/$t" >/dev/null || { echo "No such release."; exit 1; }
           git rm -rq --ignore-unmatch index.html sw.js mc ops tests
           git checkout "$t" -- index.html sw.js mc ops tests
@@ -35,4 +35,6 @@ jobs:
           if git diff --cached --quiet; then echo "Already at $t."; exit 0; fi
           git commit -q -m "Rollback to $t"
           git push -q origin HEAD:main
+          # the release rolled back from is never chosen again
+          if [ "$cur" != "-" ]; then git tag "bad-$cur" && git push -q origin "bad-$cur"; fi
           echo "Rolled back to $t"

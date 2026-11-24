@@ -6,7 +6,6 @@ on:
   push:
     branches: ["**"]
     paths: ["ops/**", "tests/**", "mc/**", "index.html", ".github/workflows/tests.yml"]
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: write
@@ -25,7 +24,7 @@ jobs:
       - name: Run the tests
         run: python tests/test_numbers.py
       - name: Run the money tests
-        run: python tests/test_money.py
+        run: '[ ! -f tests/test_money.py ] || python tests/test_money.py'
       - name: Check every app script parses
         # board cycle 1: a broken quote in mc/p11.js stopped TODAY's action list for half an hour
         run: |
@@ -34,6 +33,7 @@ jobs:
       # every tested version of main gets a tag, so the Rollback job can go back to it in one step
       - name: Mark this version as a release
         if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        continue-on-error: true
         run: |
           t="release-$(date -u +%Y%m%d-%H%M)-${GITHUB_SHA::7}"
           git tag "$t" && git push -q origin "$t" && echo "tagged $t"
@@ -43,7 +43,7 @@ jobs:
           MC_TOKEN: ${{ secrets.MC_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow tests.yml --status completed --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || true)
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow tests.yml --branch main --status completed --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || true)
           if [ "$prev" = "failure" ]; then echo "Already reported after the previous failed run."; exit 0; fi
           # The message leaves through the private records: a file in outbox/queue/ there is sent to the phone by its "Send phone messages" job.
           jq -n --arg m "A change to the code failed its tests at $(date -u +%H:%M) UTC. The engine will not run until they pass. Open SYSTEM in the app." '{title:"Market Council: a job failed",message:$m,click:"https://benipkun.github.io/market-council/#system",tags:["warning"]}' > /tmp/alert.json
